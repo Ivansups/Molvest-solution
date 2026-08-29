@@ -14,7 +14,7 @@ AI-агент техподдержки 1С для АО «Молвест»: от�
 | БД | PostgreSQL 16 + pgvector | Docker (`make up` или `make db`) |
 | UI | Next.js 16, pnpm | Только локально (`make frontend`) — в Compose нет |
 
-Фронтенд **не** входит в `docker-compose.yml`. После `make up` отдельно запустите `make frontend`.
+`make up` поднимает Postgres и API и **обязательно** применяет миграции Alembic до того, как API начнёт отвечать. Фронтенд в Compose нет — после `make up` отдельно `make frontend`.
 
 ## Быстрый старт
 
@@ -35,7 +35,7 @@ make frontend       # http://localhost:3000
 | --- | --- |
 | http://localhost:8000/health | живость сервиса (`{"status":"ok"}`) |
 | http://localhost:8000/docs | Swagger |
-| http://localhost:8000/chat | `POST`, контракт чата (пока заглушка) |
+| http://localhost:8000/chat | `POST`, контракт чата |
 | http://localhost:5432 | Postgres (`postgres` / `postgres`, БД `molvest`) |
 | http://localhost:3000 | Next.js |
 
@@ -44,8 +44,8 @@ make frontend       # http://localhost:3000
 > `env_file: .env`. `make setup` / `make env` копируют его из `.env.example`.
 > Не коммитьте `.env`.
 
-`GIGACHAT_API_KEY` нужен только для реальных ответов модели. `/health` и
-заглушка `POST /chat` работают с пустым ключом.
+`GIGACHAT_API_KEY` нужен только для реальных ответов модели. `/health`
+работает с пустым ключом.
 
 Ключ: [developers.sber.ru/gigachat](https://developers.sber.ru/gigachat).
 
@@ -97,14 +97,14 @@ make install        # uv sync + pnpm install
 | --- | --- |
 | `make setup` | `.env` + сборка/запуск Docker + ожидание `/health` |
 | `make env` | копирует `.env.example` → `.env`, если файла нет |
-| `make up` | `docker compose up -d --build` |
+| `make up` | Postgres + API, миграции, ожидание `/health` |
 | `make down` | остановить контейнеры (данные БД остаются) |
 | `make restart` | перезапуск контейнеров |
 | `make logs` | логи API и Postgres |
 | `make ps` | статус контейнеров |
-| `make health` | ждать `GET /health` до 60 с |
+| `make health` | ждать `GET /health` до 90 с |
 | `make db` | только Postgres (для `make api`) |
-| `make migrate` | `alembic upgrade head` внутри контейнера API |
+| `make migrate` | повторный `alembic upgrade head` в уже запущенном API |
 | `make api` | uvicorn на машине, `:8000`, hot-reload |
 | `make frontend` | `pnpm install` + Next.js на `:3000` |
 | `make install` | зависимости backend и frontend |
@@ -113,7 +113,7 @@ make install        # uv sync + pnpm install
 | `make fmt` | автоформат Python |
 | `make clean` | `compose down -v` — **удаляет том Postgres** |
 
-Миграций Alembic пока нет: `make migrate` отработает без ошибок и ничего не применит.
+Миграции гоняет entrypoint контейнера API перед uvicorn. `make up` не завершится, пока `/health` не ответит (схема уже на месте). `make migrate` нужен, только если применили новую ревизию без перезапуска контейнера.
 
 ## Два способа гонять API
 
@@ -153,8 +153,8 @@ curl -s -X POST http://localhost:8000/chat \
   }'
 ```
 
-`POST /chat` сейчас возвращает заглушку. Контракт — в `server/app/schemas/chat.py`
-и в OpenAPI (`/docs`).
+Контракт `POST /chat` — в `server/app/schemas/chat.py` и в OpenAPI (`/docs`).
+Документы базы знаний — `http://localhost:8000/docs` → `/api/documents`.
 
 ## Проблемы при запуске
 
@@ -212,7 +212,7 @@ Uvicorn читает `DATABASE_URL` с хостом `db` из `.env`. Запус
 
 ```bash
 cp .env.example .env
-docker compose up -d --build
+docker compose up -d --build   # API сам сделает alembic upgrade head
 curl -s http://localhost:8000/health
 
 # фронтенд
@@ -223,6 +223,8 @@ pnpm --dir frontend dev
 docker compose up -d db
 cd server
 uv sync --all-groups
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/molvest \
+  uv run alembic upgrade head
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/molvest \
   uv run uvicorn app.main:app --reload
 ```

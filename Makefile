@@ -46,7 +46,7 @@ install-frontend: ## Поставить JS-зависимости (pnpm)
 
 install: install-server install-frontend ## Поставить зависимости backend и frontend
 
-setup: env up health ## Полный первый запуск: .env, Docker, проверка /health
+setup: env up ## Полный первый запуск: .env, Docker, миграции, проверка /health
 	@echo ""
 	@echo "API:     $(API_URL)/health"
 	@echo "Docs:    $(API_URL)/docs"
@@ -56,8 +56,9 @@ setup: env up health ## Полный первый запуск: .env, Docker, п
 # Docker (API + Postgres)
 # ---------------------------------------------------------------------------
 
-up: env ## Собрать и поднять API + Postgres в фоне
+up: env ## Собрать и поднять API + Postgres, дождаться миграций и /health
 	$(COMPOSE) up -d --build
+	@$(MAKE) health
 
 down: ## Остановить контейнеры (том БД не удаляется)
 	$(COMPOSE) down
@@ -74,16 +75,16 @@ ps: ## Статус контейнеров
 db: env ## Поднять только Postgres (для локального uvicorn)
 	$(COMPOSE) up -d db
 
-migrate: env ## Применить миграции Alembic внутри контейнера API
-	$(COMPOSE) exec api alembic upgrade head
+migrate: env ## Повторно применить миграции в уже запущенном API
+	$(COMPOSE) exec -T api alembic upgrade head
 
-health: ## Дождаться ответа API /health (до 60 с)
+health: ## Дождаться ответа API /health (до 90 с)
 	@echo "Waiting for API at $(API_URL)/health ..."
 	@i=0; \
 	until curl -sf "$(API_URL)/health" >/dev/null; do \
 		i=$$((i + 1)); \
-		if [ $$i -ge 60 ]; then \
-			echo "API did not become ready in 60s. Try: make logs"; \
+		if [ $$i -ge 90 ]; then \
+			echo "API did not become ready in 90s. Try: make logs"; \
 			exit 1; \
 		fi; \
 		sleep 1; \
@@ -94,8 +95,10 @@ health: ## Дождаться ответа API /health (до 60 с)
 # Локальная разработка (без контейнера API)
 # ---------------------------------------------------------------------------
 
-api: ## Локальный uvicorn с hot-reload (БД: make db)
+api: ## Локальный uvicorn с hot-reload (БД: make db). Сначала миграции.
 	cd $(SERVER_DIR) && \
+		DATABASE_URL="$(LOCAL_DATABASE_URL)" \
+		uv run alembic upgrade head && \
 		DATABASE_URL="$(LOCAL_DATABASE_URL)" \
 		uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
