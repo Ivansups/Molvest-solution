@@ -17,34 +17,6 @@ AI-агент техподдержки 1С для АО «Молвест»: Q&A �
 - Package manager: **uv** для Python (`uv run ...`, `uv add ...`), **pnpm** для
   Node — никогда `pip`, `poetry`, `npm`, `yarn`
 
-## Project Structure
-
-```
-apps/
-  api/                   # FastAPI-сервис
-    app/
-      core/              # конфиг, логирование, DB-сессия, клиент GigaChat
-      agent/             # LangGraph-граф: узлы retrieval / generation / vision / escalation
-      rag/               # ingestion, chunking, embeddings, поиск по pgvector
-      knowledge_base/    # модели документов, services/selectors для админки
-      conversations/     # Conversation/Message/Escalation: модели, services, selectors
-      channels/          # адаптеры каналов: web/, bitrix24/, email_redmine/
-      vision/            # анализ скриншотов (OCR + классификация проблемы)
-      api/               # FastAPI-роутеры, один ресурс — один файл
-      schemas/           # Pydantic-схемы запросов/ответов
-    alembic/             # миграции
-    tests/
-  web/                   # Next.js: админ-панель базы знаний + чат-виджет для демо
-docs/
-  ROADMAP.md             # план на 7 дней
-  SCENARIOS.md           # разбор сценариев + диаграммы
-  technical spec/        # исходное ТЗ и критерии хакатона
-manage / pyproject.toml, alembic.ini — в apps/api
-```
-
-Каждый модуль внутри `apps/api/app/` — это домен: `models.py`, `services.py`
-(изменения состояния), `selectors.py` (чтение), при необходимости `tasks.py`.
-
 ## Organization Rules
 
 - **Бизнес-логика → `services/`**, не во view/роутерах и не в моделях.
@@ -115,22 +87,22 @@ manage / pyproject.toml, alembic.ini — в apps/api
 После правки любого Python-файла — прогнать и исправить всё:
 
 ```bash
-uv run ruff check . && uv run ruff format --check . && uv run mypy apps/api
+cd server && uv run ruff check . && uv run ruff format --check . && uv run mypy .
 ```
 
-После правки любого файла в `apps/web`:
+После правки любого файла в `frontend/`:
 
 ```bash
-pnpm --dir apps/web lint && pnpm --dir apps/web typecheck
+pnpm --dir frontend lint && pnpm --dir frontend typecheck
 ```
 
 После изменения моделей — проверить миграции:
 
 ```bash
-cd apps/api && uv run alembic check
+cd server && uv run alembic check
 ```
 
-Тесты — `pytest` (+ `pytest-asyncio` для FastAPI), `Jest`/RTL для `apps/web`.
+Тесты — `pytest` (+ `pytest-asyncio` для FastAPI), `Jest`/RTL для `frontend/`.
 Пишем позитивные и негативные кейсы; идемпотентные операции (эскалация,
 реиндексация) — вызываем дважды в тесте. Если нужного инструмента/скрипта нет
 в проекте — сказать явно, не пропускать проверку молча.
