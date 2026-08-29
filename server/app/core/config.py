@@ -6,10 +6,20 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Настройки приложения, читаются из .env / окружения."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # Сначала server/.env, затем корневой .env (запуск из server/).
+    # Переменные окружения (в т.ч. из docker compose env_file) имеют приоритет.
+    model_config = SettingsConfigDict(
+        env_file=(".env", "../.env"),
+        extra="ignore",
+    )
 
     gigachat_api_key: str = ""
     gigachat_api_url: str = ""
+    gigachat_model: str = "GigaChat-2"
+    gigachat_scope: str = "GIGACHAT_API_PERS"
+    # Локально сертификат НУЦ Минцифры часто не установлен.
+    gigachat_verify_ssl_certs: bool = False
+    gigachat_timeout: float = 60.0
     database_url: str = "postgresql+asyncpg://postgres:postgres@db:5432/molvest"
     confidence_threshold: float = 0.8
     top_k: int = 5
