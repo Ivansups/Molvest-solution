@@ -1,10 +1,30 @@
-"""Ретривал чанков. Пока заглушка — база знаний ещё не подключена."""
+"""Ретривал чанков: поиск по базе знаний через внедрённый ретривер."""
 
-from app.agent.state import AgentState, RetrievedChunk
+import logging
+
+from app.agent.state import AgentState
+from app.core.config import settings
+from app.rag.retrieval import Retriever
+
+logger = logging.getLogger(__name__)
 
 
-async def retrieve(state: AgentState) -> dict[str, object]:
-    """Вернёт top-k чанки после этапа индексации. Сейчас список пустой."""
-    _ = state
-    empty: list[RetrievedChunk] = []
-    return {"chunks": empty}
+async def retrieve(
+    state: AgentState,
+    *,
+    retriever: Retriever,
+) -> dict[str, object]:
+    """Возвращает релевантные чанки и оценку уверенности по скору ретривала."""
+    chunks = await retriever(state)
+    confidence = max((c["score"] for c in chunks), default=0.0)
+    logger.info(
+        "retrieve chunks=%s confidence=%s escalated=%s",
+        len(chunks),
+        confidence,
+        confidence < settings.confidence_threshold,
+    )
+    return {
+        "chunks": chunks,
+        "confidence": confidence,
+        "escalated": confidence < settings.confidence_threshold,
+    }

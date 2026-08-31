@@ -1,7 +1,11 @@
 """Единственная точка смены Conversation.status."""
 
+import logging
+
 from app.models.conversation import Conversation
 from app.models.enums import ConversationStatus
+
+logger = logging.getLogger(__name__)
 
 _ALLOWED: frozenset[tuple[ConversationStatus, ConversationStatus]] = frozenset(
     {
@@ -31,6 +35,18 @@ def transition_status(
     """Меняет статус, если переход open→escalated или escalated→resolved."""
     pair = (conversation.status, new_status)
     if pair not in _ALLOWED:
+        logger.warning(
+            "запрещённый переход conversation_id=%s %s → %s",
+            conversation.id,
+            conversation.status,
+            new_status,
+        )
         raise IllegalStatusTransitionError(conversation.status, new_status)
+    logger.info(
+        "статус диалога conversation_id=%s %s → %s",
+        conversation.id,
+        conversation.status,
+        new_status,
+    )
     conversation.status = new_status
     return conversation

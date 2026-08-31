@@ -1,5 +1,6 @@
 """Единый клиент GigaChat: генерация, Vision и эмбеддинги."""
 
+import logging
 from collections.abc import Sequence
 from typing import Literal, TypedDict
 
@@ -13,9 +14,10 @@ from gigachat.models import (
 
 from app.core.config import Settings, settings
 
+logger = logging.getLogger(__name__)
+
 ChatRole = Literal["system", "user", "assistant"]
 
-EMBEDDINGS_MODEL = "Embeddings"
 _DATA_URL_PREFIX = "data:image/png;base64,"
 
 
@@ -47,12 +49,27 @@ class GigaChatService:
 
     async def generate(self, messages: Sequence[ChatTurn]) -> str:
         """Отправляет диалог в GigaChat и возвращает текст ответа."""
+        chars = sum(len(turn["content"]) for turn in messages)
+        logger.info(
+            "GigaChat generate model=%s turns=%s chars=%s",
+            self._settings.gigachat_model,
+            len(messages),
+            chars,
+        )
         request = ChatCompletionRequest(messages=_to_messages(messages))
         response = await self._client.achat.create(request)
-        return _extract_text(response)
+        text = _extract_text(response)
+        logger.info("GigaChat generate готов chars=%s", len(text))
+        return text
 
     async def chat_with_vision(self, image_base64: str, prompt: str) -> str:
         """Описывает скриншот через Vision. На вход — сырая base64-строка."""
+        logger.info(
+            "GigaChat vision model=%s image_chars=%s prompt_chars=%s",
+            self._settings.gigachat_model,
+            len(image_base64),
+            len(prompt),
+        )
         data_url = f"{_DATA_URL_PREFIX}{_strip_data_url_prefix(image_base64)}"
         image_part = ChatContentPart.model_validate(
             {"type": "image_url", "image_url": {"url": data_url}}
@@ -66,11 +83,23 @@ class GigaChatService:
             ]
         )
         response = await self._client.achat.create(request)
-        return _extract_text(response)
+        text = _extract_text(response)
+        logger.info("GigaChat vision готов chars=%s", len(text))
+        return text
 
     async def get_embeddings(self, texts: list[str]) -> list[list[float]]:
         """Векторизует тексты моделью эмбеддингов GigaChat."""
-        result = await self._client.aembeddings(texts, model=EMBEDDINGS_MODEL)
+        logger.info(
+            "GigaChat embeddings model=%s texts=%s chars=%s",
+            self._settings.gigachat_embeddings_model,
+            len(texts),
+            sum(len(item) for item in texts),
+        )
+        result = await self._client.aembeddings(
+            texts,
+            model=self._settings.gigachat_embeddings_model,
+        )
+        logger.info("GigaChat embeddings готов vectors=%s", len(result.data))
         return [item.embedding for item in result.data]
 
 

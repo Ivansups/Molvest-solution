@@ -3,15 +3,17 @@
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from gigachat import GigaChat
 from gigachat.models import (
     ChatCompletionResponse,
     ChatContentPart,
     ChatMessage,
 )
+from pydantic import ValidationError
 
 from app.core.config import Settings
-from app.core.gigachat_client import EMBEDDINGS_MODEL, GigaChatService
+from app.core.gigachat_client import GigaChatService
 
 
 def _chat_response(text: str) -> ChatCompletionResponse:
@@ -20,7 +22,10 @@ def _chat_response(text: str) -> ChatCompletionResponse:
     )
 
 
-def _service() -> tuple[GigaChatService, MagicMock]:
+def _service(
+    *,
+    embeddings_model: str = "Embeddings",
+) -> tuple[GigaChatService, MagicMock]:
     client = MagicMock()
     client.achat.create = AsyncMock(return_value=_chat_response("ok"))
     embedding_item = MagicMock()
@@ -28,7 +33,11 @@ def _service() -> tuple[GigaChatService, MagicMock]:
     embeddings = MagicMock()
     embeddings.data = [embedding_item]
     client.aembeddings = AsyncMock(return_value=embeddings)
-    settings = Settings(gigachat_api_key="test-key", gigachat_model="GigaChat-2")
+    settings = Settings(
+        gigachat_api_key="test-key",
+        gigachat_model="GigaChat-2",
+        gigachat_embeddings_model=embeddings_model,
+    )
     return GigaChatService(settings, client=cast(GigaChat, client)), client
 
 
@@ -56,8 +65,14 @@ async def test_chat_with_vision_strips_existing_prefix() -> None:
     assert image_part.model_dump()["image_url"]["url"] == ("data:image/png;base64,ABC")
 
 
-async def test_get_embeddings_uses_fixed_model() -> None:
-    service, client = _service()
+@pytest.mark.parametrize("model", ["Embeddings", "Embeddings-2"])
+async def test_get_embeddings_uses_model_from_settings(model: str) -> None:
+    service, client = _service(embeddings_model=model)
     vectors = await service.get_embeddings(["документ"])
     assert vectors == [[0.1, 0.2]]
-    client.aembeddings.assert_awaited_once_with(["документ"], model=EMBEDDINGS_MODEL)
+    client.aembeddings.assert_awaited_once_with(["документ"], model=model)
+
+
+def test_embeddings_model_rejects_empty() -> None:
+    with pytest.raises(ValidationError):
+        Settings(gigachat_embeddings_model="  ")

@@ -1,8 +1,9 @@
-"""Загрузка, список, удаление и заглушка reindex документов."""
+"""Загрузка, список, удаление и реиндексация документов."""
 
 from pathlib import Path
 from uuid import UUID, uuid4
 
+import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -57,6 +58,35 @@ async def test_unsupported_type_is_rejected(api_client: AsyncClient) -> None:
     assert listed.json()["total"] == 0
 
 
+async def test_upload_ignores_swagger_metadata_placeholder(
+    api_client: AsyncClient,
+) -> None:
+    response = await api_client.post(
+        "/api/documents",
+        files={"file": ("guide.md", b"# 1C", "text/markdown")},
+        data={
+            "title": "Гайд",
+            "installation_id": str(INSTALL_A),
+            "metadata": "string",
+        },
+    )
+    assert response.status_code == 201
+    assert response.json()["status"] == DocumentStatus.PENDING
+
+
+async def test_upload_rejects_non_object_metadata(api_client: AsyncClient) -> None:
+    response = await api_client.post(
+        "/api/documents",
+        files={"file": ("guide.md", b"# 1C", "text/markdown")},
+        data={
+            "title": "Гайд",
+            "installation_id": str(INSTALL_A),
+            "metadata": "[1]",
+        },
+    )
+    assert response.status_code == 422
+
+
 async def test_duplicate_name_conflicts_per_installation(
     api_client: AsyncClient,
 ) -> None:
@@ -108,14 +138,36 @@ async def test_delete_removes_chunks_and_file(
     assert again.status_code == 404
 
 
-async def test_reindex_twice_stays_pending(api_client: AsyncClient) -> None:
-    code, created = await _upload(api_client, "reindex.pdf")
+async def test_reindex_schedules_background_task(
+    api_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.api.documents as documents_api
+
+    ran: list[UUID] = []
+
+    async def fake_background(document_id: UUID, request_id: str) -> None:
+        assert request_id
+        ran.append(document_id)
+
+    monkeypatch.setattr(documents_api, "_reindex_in_background", fake_background)
+    code, created = await _upload(
+        api_client,
+        "reindex.md",
+        body=("Как провести документ в 1С. ".encode()),
+    )
     assert code == 201
-    document_id = created["id"]
-    first = await api_client.post(f"/api/documents/{document_id}/reindex")
-    second = await api_client.post(f"/api/documents/{document_id}/reindex")
-    assert first.status_code == 200
-    assert second.status_code == 200
-    assert first.json()["status"] == DocumentStatus.PENDING
-    assert second.json()["status"] == DocumentStatus.PENDING
-    assert first.json()["chunks"] == []
+    document_id = UUID(str(created["id"]))
+
+    accepted = await api_client.post(f"/api/documents/{document_id}/reindex")
+    assert accepted.status_code == 202
+    assert accepted.json()["status"] == DocumentStatus.PENDING
+    assert accepted.json()["id"] == str(document_id)
+    assert ran == [document_id]
+
+
+async def test_reindex_unknown_document_is_404(
+    api_client: AsyncClient,
+) -> None:
+    response = await api_client.post(f"/api/documents/{uuid4()}/reindex")
+    assert response.status_code == 404

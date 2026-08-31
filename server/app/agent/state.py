@@ -11,6 +11,7 @@ class RetrievedChunk(TypedDict):
     document_id: str
     title: str
     chunk_text: str
+    score: float
 
 
 class AgentState(TypedDict, total=False):
@@ -18,6 +19,7 @@ class AgentState(TypedDict, total=False):
 
     text: str | None
     image_base64: str | None
+    installation_id: str | None
     query: str
     intent: Intent
     chunks: list[RetrievedChunk]

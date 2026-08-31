@@ -1,0 +1,4 @@
+# Shell-скрипты должны храниться с переводом строк LF
+# (независимо от core.autocrlf на Windows) — иначе ломаются в Linux-контейнерах.
+*.sh text eol=lf
+*.bash text eol=lf
