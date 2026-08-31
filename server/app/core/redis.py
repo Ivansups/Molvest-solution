@@ -6,12 +6,15 @@ Redis — только оптимизация: при его недоступн�
 
 import hashlib
 import json
+import logging
 from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
 from redis.asyncio import Redis
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 _client: Redis | None = None
 
@@ -86,4 +89,6 @@ async def get_kb_version() -> int:
 async def increment_kb_version() -> int:
     """Инкрементирует версию БЗ при индексации/удалении документа."""
     value = await _best_effort(get_redis().incr, "kb_version")
-    return int(value) if isinstance(value, int) else 1
+    version = int(value) if isinstance(value, int) else 1
+    logger.info("kb_version=%s", version)
+    return version

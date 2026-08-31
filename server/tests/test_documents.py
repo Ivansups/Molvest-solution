@@ -146,7 +146,8 @@ async def test_reindex_schedules_background_task(
 
     ran: list[UUID] = []
 
-    async def fake_background(document_id: UUID) -> None:
+    async def fake_background(document_id: UUID, request_id: str) -> None:
+        assert request_id
         ran.append(document_id)
 
     monkeypatch.setattr(documents_api, "_reindex_in_background", fake_background)

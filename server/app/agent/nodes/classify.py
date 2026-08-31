@@ -1,6 +1,11 @@
 """Классификация обращения: приветствие, не по теме или вопрос по 1С."""
 
+import logging
+
 from app.agent.state import AgentState
+from app.core.logging import preview
+
+logger = logging.getLogger(__name__)
 
 _EMPTY_REPLY = "Опишите проблему текстом или приложите скриншот ошибки 1С."
 
@@ -24,6 +29,7 @@ async def classify(state: AgentState, *, llm: object = None) -> dict[str, object
 
     query = (state.get("query") or "").strip()
     if not query:
+        logger.info("classify intent=empty")
         return {
             "query": "",
             "intent": "empty",
@@ -40,4 +46,5 @@ async def classify(state: AgentState, *, llm: object = None) -> dict[str, object
     else:
         intent = "off_topic"
 
+    logger.info("classify intent=%s query=%s", intent, preview(query))
     return {"query": query, "intent": intent}

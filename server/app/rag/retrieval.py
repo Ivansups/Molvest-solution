@@ -1,5 +1,6 @@
 """Векторный поиск чанков по базе знаний для запроса пользователя."""
 
+import logging
 from collections.abc import Awaitable, Callable
 from uuid import UUID, uuid5
 
@@ -8,12 +9,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.state import AgentState, RetrievedChunk
 from app.core.config import Settings, settings
+from app.core.logging import preview
 from app.core.redis import get_cached_embeddings, set_cached_embeddings
 from app.db.session import SessionLocal
 from app.models.chunk import Chunk
 from app.models.document import Document
 from app.models.enums import DocumentStatus
 from app.rag.protocols import EmbeddingsProvider, ensure_embedding_dimensions
+
+logger = logging.getLogger(__name__)
 
 Retriever = Callable[[AgentState], Awaitable[list[RetrievedChunk]]]
 
@@ -35,10 +39,12 @@ def make_retriever(
     async def retriever(state: AgentState) -> list[RetrievedChunk]:
         raw_installation = state.get("installation_id")
         if raw_installation is None:
+            logger.warning("ретривер: нет installation_id")
             return []
         try:
             installation_id = UUID(raw_installation)
         except ValueError:
+            logger.warning("ретривер: невалидный installation_id=%s", raw_installation)
             return []
         async with SessionLocal() as session:
             return await retrieve_chunks(
@@ -66,17 +72,20 @@ async def retrieve_chunks(
     SELECT без изменения состояния. Используем кэш Redis для эмбеддингов.
     """
     if not query.strip():
+        logger.info("поиск пропуск: пустой запрос")
         return []
 
-    # Пробуем получить эмбеддинги из кэша
     cached = await get_cached_embeddings(query)
     if cached is not None:
+        logger.info("эмбеддинг запроса из кэша query=%s", preview(query))
         embedding = cached[0]
     else:
+        logger.info("эмбеддинг запроса через GigaChat query=%s", preview(query))
         embedding = (await llm.get_embeddings([query]))[0]
     ensure_embedding_dimensions([embedding])
     if cached is None:
         await set_cached_embeddings(query, [embedding])
+        logger.info("эмбеддинг запроса записан в кэш")
 
     distance_col = Chunk.embedding.cosine_distance(embedding).label("distance")
     stmt = (
@@ -99,4 +108,12 @@ async def retrieve_chunks(
                 score=round(1.0 - float(distance), 4),
             )
         )
+    top = chunks[0]["score"] if chunks else 0.0
+    logger.info(
+        "поиск готов installation_id=%s top_k=%s found=%s top_score=%s",
+        installation_id,
+        top_k,
+        len(chunks),
+        top,
+    )
     return chunks

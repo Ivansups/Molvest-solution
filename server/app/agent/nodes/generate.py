@@ -1,5 +1,7 @@
 """Генерация ответа эксперта 1С по вопросу и найденному контексту."""
 
+import logging
+
 from app.agent.prompts import (
     GENERATE_GREETING_PROMPT,
     GENERATE_OFF_TOPIC_PROMPT,
@@ -7,6 +9,9 @@ from app.agent.prompts import (
 )
 from app.agent.state import AgentState, RetrievedChunk
 from app.core.gigachat_client import ChatTurn, GigaChatService
+from app.core.logging import preview
+
+logger = logging.getLogger(__name__)
 
 
 async def generate(state: AgentState, *, llm: GigaChatService) -> dict[str, object]:
@@ -28,7 +33,9 @@ async def generate(state: AgentState, *, llm: GigaChatService) -> dict[str, obje
             "content": _user_prompt(query, chunks, extra),
         },
     ]
+    logger.info("generate вызов intent=%s chunks=%s", intent, len(chunks))
     answer = await llm.generate(messages)
+    logger.info("generate ответ chars=%s text=%s", len(answer), preview(answer))
 
     if intent == "support":
         confidence = max((c["score"] for c in chunks), default=0.0)

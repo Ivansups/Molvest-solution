@@ -1,9 +1,12 @@
 """Разбиение текста документа на перекрывающиеся чанки и извлечение текста."""
 
 import io
+import logging
 import re
 
 from app.models.enums import FileType
+
+logger = logging.getLogger(__name__)
 
 _WORD_RE = re.compile(r"\S+")
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -113,8 +116,19 @@ def extract_chunks(
     chunk_overlap: int,
 ) -> list[str]:
     """Извлекает текст файла и режет его на чанки."""
-    return chunk_text(
-        extract_text(data, file_type),
+    text = extract_text(data, file_type)
+    chunks = chunk_text(
+        text,
         max_chunk_size=max_chunk_size,
         chunk_overlap=chunk_overlap,
     )
+    logger.info(
+        "чанкинг type=%s bytes=%s chars=%s chunks=%s max_chunk_size=%s overlap=%s",
+        file_type.value,
+        len(data),
+        len(text),
+        len(chunks),
+        max_chunk_size,
+        chunk_overlap,
+    )
+    return chunks

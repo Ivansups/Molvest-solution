@@ -1,6 +1,7 @@
 """Загрузка, удаление и реиндексация документов."""
 
 import asyncio
+import logging
 from pathlib import Path
 from uuid import UUID
 
@@ -15,6 +16,8 @@ from app.models.document import Document
 from app.models.enums import DocumentStatus, FileType
 from app.rag.ingestion import IngestionError, index_document
 from app.selectors.documents import get_document
+
+logger = logging.getLogger(__name__)
 
 _EXTENSIONS: dict[str, FileType] = {
     ".pdf": FileType.PDF,
@@ -105,6 +108,11 @@ async def upload_document(
     document.extra_metadata = stored
     await session.commit()
     await session.refresh(document)
+    logger.info(
+        "файл сохранён document_id=%s path=%s",
+        document.id,
+        dest,
+    )
     return document
 
 
@@ -120,6 +128,7 @@ async def delete_document(
     await session.delete(document)
     await session.commit()
     await increment_kb_version()
+    logger.info("документ удалён document_id=%s file=%s", document_id, path)
     if path is not None:
         await asyncio.to_thread(path.unlink, missing_ok=True)
 
@@ -135,6 +144,7 @@ async def reindex_document(
     document = await get_document(session, document_id)
     if document is None:
         raise DocumentNotFoundError(document_id)
+    logger.info("реиндекс сервиса document_id=%s", document_id)
     effective_llm = llm or get_gigachat_service()
     document.status = DocumentStatus.PENDING
     await session.commit()
