@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 
 from app.agent.graph import get_graph
 from app.agent.state import AgentState, RetrievedChunk
+from app.rag.retrieval import workspace_to_installation_id
 from app.schemas.chat import ChatRequest, ChatResponse, Source
 
 
@@ -24,6 +25,7 @@ def _initial_state(request: ChatRequest) -> AgentState:
     return {
         "text": request.text,
         "image_base64": request.image_base64,
+        "installation_id": str(workspace_to_installation_id(request.workspace_id)),
         "query": "",
         "intent": "empty",
         "chunks": [],

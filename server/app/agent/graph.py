@@ -11,16 +11,20 @@ from app.agent.nodes.generate import generate
 from app.agent.nodes.retrieve import retrieve
 from app.agent.nodes.route import route
 from app.agent.nodes.vision import vision
-from app.agent.state import AgentState
+from app.agent.state import AgentState, RetrievedChunk
 from app.core.config import Settings, settings
 from app.core.gigachat_client import GigaChatService, get_gigachat_service
+from app.rag.retrieval import Retriever, make_retriever
 
 
 def build_graph(
     llm: GigaChatService,
     app_settings: Settings,
+    *,
+    retriever: Retriever | None = None,
 ) -> CompiledStateGraph[AgentState, None]:
     """Собирает стартовый граф сценариев 1–3."""
+    effective_retriever = retriever or make_retriever(llm, app_settings)
     builder: StateGraph[AgentState, None] = StateGraph(AgentState)
 
     async def vision_node(state: AgentState) -> dict[str, str]:
@@ -35,8 +39,8 @@ def build_graph(
     async def confidence_node(state: AgentState) -> dict[str, float]:
         return await confidence_check(state, llm=llm)
 
-    async def retrieve_node(state: AgentState) -> dict[str, object]:
-        return await retrieve(state)
+    async def retrieve_node(state: AgentState) -> dict[str, list[RetrievedChunk]]:
+        return await retrieve(state, retriever=effective_retriever)
 
     async def route_node(state: AgentState) -> dict[str, bool]:
         return await route(state, settings=app_settings)

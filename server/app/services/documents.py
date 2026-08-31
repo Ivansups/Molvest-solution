@@ -1,4 +1,4 @@
-"""Загрузка, удаление и заглушка реиндексации документов."""
+"""Загрузка, удаление и реиндексация документов."""
 
 import asyncio
 from pathlib import Path
@@ -9,8 +9,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, settings
+from app.core.gigachat_client import GigaChatService, get_gigachat_service
 from app.models.document import Document
 from app.models.enums import DocumentStatus, FileType
+from app.rag.ingestion import IngestionError, index_document
 from app.selectors.documents import get_document
 
 _EXTENSIONS: dict[str, FileType] = {
@@ -123,17 +125,31 @@ async def delete_document(
 async def reindex_document(
     session: AsyncSession,
     document_id: UUID,
+    *,
+    llm: GigaChatService | None = None,
+    app_settings: Settings | None = None,
 ) -> Document:
-    """Ставит PENDING. Чанки не трогает — индексация на этапе 3."""
+    """Индексирует документ: чанкит, эмбеддит и заменяет старые чанки."""
     document = await get_document(session, document_id)
     if document is None:
         raise DocumentNotFoundError(document_id)
+    effective_llm = llm or get_gigachat_service()
     document.status = DocumentStatus.PENDING
     await session.commit()
-    loaded = await get_document(session, document_id)
-    if loaded is None:
-        raise DocumentNotFoundError(document_id)
-    return loaded
+    try:
+        document = await index_document(
+            session,
+            document,
+            effective_llm,
+            app_settings=app_settings,
+        )
+    except IngestionError as exc:
+        raise ReindexFailedError(str(exc)) from exc
+    return document
+
+
+class ReindexFailedError(Exception):
+    """Индексация документа не удалась (см. поле indexing_error)."""
 
 
 def _storage_path(upload_dir: str, document: Document) -> Path:

@@ -8,6 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.gigachat_client import get_gigachat_service
 from app.db.session import get_session
 from app.models.enums import DocumentStatus, FileType
 from app.schemas.documents import (
@@ -22,6 +23,7 @@ from app.selectors import documents as document_selectors
 from app.services.documents import (
     DocumentNotFoundError,
     DuplicateDocumentError,
+    ReindexFailedError,
     UnsupportedFileTypeError,
     delete_document,
     reindex_document,
@@ -118,12 +120,21 @@ async def reindex_document_route(
     session: SessionDep,
     document_id: UUID,
 ) -> DocumentDetailOut:
-    """Ставит PENDING. Реальную индексацию этап 3 ещё не делает."""
+    """Чанкит, эмбеддит и пересоздаёт чанки документа."""
     try:
-        document = await reindex_document(session, document_id)
+        document = await reindex_document(
+            session,
+            document_id,
+            llm=get_gigachat_service(),
+        )
     except DocumentNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except ReindexFailedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
     return document_to_detail(document)

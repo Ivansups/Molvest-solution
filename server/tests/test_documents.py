@@ -1,8 +1,9 @@
-"""Загрузка, список, удаление и заглушка reindex документов."""
+"""Загрузка, список, удаление и реиндексация документов."""
 
 from pathlib import Path
 from uuid import UUID, uuid4
 
+import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -108,14 +109,45 @@ async def test_delete_removes_chunks_and_file(
     assert again.status_code == 404
 
 
-async def test_reindex_twice_stays_pending(api_client: AsyncClient) -> None:
-    code, created = await _upload(api_client, "reindex.pdf")
+class _FakeEmbedder:
+    """Эмбеддинги без сети — для reindex через API."""
+
+    async def get_embeddings(self, texts: list[str]) -> list[list[float]]:
+        vector = [0.1] * 1024
+        return [vector for _ in texts]
+
+
+async def test_reindex_indexes_document_idempotently(
+    api_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.api.documents as documents_api
+
+    monkeypatch.setattr(
+        documents_api,
+        "get_gigachat_service",
+        lambda: _FakeEmbedder(),
+    )
+    code, created = await _upload(
+        api_client,
+        "reindex.md",
+        body=("Как провести документ в 1С. ".encode()),
+    )
     assert code == 201
     document_id = created["id"]
     first = await api_client.post(f"/api/documents/{document_id}/reindex")
     second = await api_client.post(f"/api/documents/{document_id}/reindex")
     assert first.status_code == 200
     assert second.status_code == 200
-    assert first.json()["status"] == DocumentStatus.PENDING
-    assert second.json()["status"] == DocumentStatus.PENDING
-    assert first.json()["chunks"] == []
+    assert first.json()["status"] == DocumentStatus.INDEXED
+    assert second.json()["status"] == DocumentStatus.INDEXED
+    assert len(first.json()["chunks"]) == 1
+    assert len(second.json()["chunks"]) == 1
+
+
+async def test_reindex_unparseable_document_fails(api_client: AsyncClient) -> None:
+    code, created = await _upload(api_client, "broken.pdf")
+    assert code == 201
+    document_id = created["id"]
+    response = await api_client.post(f"/api/documents/{document_id}/reindex")
+    assert response.status_code == 422

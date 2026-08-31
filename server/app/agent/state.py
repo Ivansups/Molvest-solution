@@ -18,6 +18,7 @@ class AgentState(TypedDict, total=False):
 
     text: str | None
     image_base64: str | None
+    installation_id: str | None
     query: str
     intent: Intent
     chunks: list[RetrievedChunk]

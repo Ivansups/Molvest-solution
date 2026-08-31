@@ -8,7 +8,7 @@ import pytest
 from app.agent.graph import build_graph
 from app.agent.nodes.route import route
 from app.agent.parsing import parse_confidence, parse_intent
-from app.agent.state import AgentState
+from app.agent.state import AgentState, RetrievedChunk
 from app.core.config import Settings
 from app.schemas.chat import ChatRequest
 from app.services.agent import run_chat_turn
@@ -135,7 +135,10 @@ async def test_run_chat_turn_maps_contract(
 ) -> None:
     import app.services.agent as agent_service
 
-    graph = build_graph(llm_mock, app_settings)
+    async def fake_retriever(state: AgentState) -> list[RetrievedChunk]:
+        return []
+
+    graph = build_graph(llm_mock, app_settings, retriever=fake_retriever)
     llm_mock.generate = AsyncMock(
         side_effect=['{"intent": "support"}', "Ответ", '{"confidence": 0.9}']
     )

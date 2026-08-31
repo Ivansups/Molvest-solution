@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     confidence_threshold: float = 0.8
     top_k: int = 5
     max_chunk_size: int = 512
+    chunk_overlap: int = 128
     upload_dir: str = "./data/uploads"
     internal_service_token: str = ""
 
