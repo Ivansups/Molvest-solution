@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, settings
 from app.core.gigachat_client import GigaChatService, get_gigachat_service
+from app.core.redis import increment_kb_version
 from app.models.document import Document
 from app.models.enums import DocumentStatus, FileType
 from app.rag.ingestion import IngestionError, index_document
@@ -118,6 +119,7 @@ async def delete_document(
     path = _path_from_metadata(document)
     await session.delete(document)
     await session.commit()
+    await increment_kb_version()
     if path is not None:
         await asyncio.to_thread(path.unlink, missing_ok=True)
 

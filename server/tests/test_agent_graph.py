@@ -1,4 +1,4 @@
-"""Тесты стартовых узлов и графа LangGraph на заглушке GigaChat."""
+"""Тесты стартовых узлов и графа LangGraph (classify правилами, скор ретривала)."""
 
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
@@ -6,8 +6,7 @@ from uuid import UUID
 import pytest
 
 from app.agent.graph import build_graph
-from app.agent.nodes.route import route
-from app.agent.parsing import parse_confidence, parse_intent
+from app.agent.nodes.classify import _EMPTY_REPLY, classify
 from app.agent.state import AgentState, RetrievedChunk
 from app.core.config import Settings
 from app.schemas.chat import ChatRequest
@@ -35,17 +34,16 @@ async def test_empty_input_skips_llm(
     graph = build_graph(llm_mock, app_settings)
     result = await graph.ainvoke(_state(text=None, image_base64=None))
     assert result["intent"] == "empty"
+    assert result["answer"] == _EMPTY_REPLY
     assert result["escalated"] is False
     llm_mock.generate.assert_not_called()
     llm_mock.chat_with_vision.assert_not_called()
 
 
-async def test_greeting_skips_retrieve_and_confidence(
+async def test_greeting_skips_retrieve(
     llm_mock: MagicMock, app_settings: Settings
 ) -> None:
-    llm_mock.generate = AsyncMock(
-        side_effect=['{"intent": "greeting"}', "Здравствуйте!"]
-    )
+    llm_mock.generate = AsyncMock(return_value="Здравствуйте!")
     graph = build_graph(llm_mock, app_settings)
     result = await graph.ainvoke(_state(text="привет"))
     assert result["intent"] == "greeting"
@@ -53,77 +51,87 @@ async def test_greeting_skips_retrieve_and_confidence(
     assert result["confidence"] == 1.0
     assert result["escalated"] is False
     assert result["chunks"] == []
-    assert llm_mock.generate.await_count == 2
+    assert llm_mock.generate.await_count == 1
 
 
-async def test_support_escalates_below_threshold(
+async def test_support_retrieves_then_generates(
     llm_mock: MagicMock, app_settings: Settings
 ) -> None:
-    llm_mock.generate = AsyncMock(
-        side_effect=[
-            '{"intent": "support"}',
-            "Черновик ответа",
-            '{"confidence": 0.4}',
+    llm_mock.generate = AsyncMock(return_value="Ответ из базы")
+
+    async def fake_retriever(state: AgentState) -> list[RetrievedChunk]:
+        return [
+            RetrievedChunk(
+                document_id=str(UUID(int=1)),
+                title="Инструкция",
+                chunk_text="провести документ в 1С",
+                score=0.9,
+            )
         ]
-    )
-    graph = build_graph(llm_mock, app_settings)
+
+    graph = build_graph(llm_mock, app_settings, retriever=fake_retriever)
     result = await graph.ainvoke(_state())
     assert result["intent"] == "support"
-    assert result["answer"] == "Черновик ответа"
-    assert result["confidence"] == 0.4
-    assert result["escalated"] is True
-    assert llm_mock.generate.await_count == 3
+    assert result["answer"] == "Ответ из базы"
+    assert result["confidence"] == 0.9
+    assert result["escalated"] is False
+    assert llm_mock.generate.await_count == 1
 
 
-async def test_support_does_not_escalate_at_threshold(
+async def test_support_below_threshold_escalates_without_generate(
     llm_mock: MagicMock, app_settings: Settings
 ) -> None:
-    llm_mock.generate = AsyncMock(
-        side_effect=[
-            '{"intent": "support"}',
-            "Ответ из базы",
-            '{"confidence": 0.8}',
+    llm_mock.generate = AsyncMock(return_value="никогда не вызван")
+
+    async def fake_retriever(state: AgentState) -> list[RetrievedChunk]:
+        return [
+            RetrievedChunk(
+                document_id=str(UUID(int=2)),
+                title="Инструкция",
+                chunk_text="что-то не по делу",
+                score=0.4,
+            )
         ]
-    )
-    graph = build_graph(llm_mock, app_settings)
+
+    graph = build_graph(llm_mock, app_settings, retriever=fake_retriever)
     result = await graph.ainvoke(_state())
-    assert result["escalated"] is False
-    assert result["confidence"] == 0.8
+    assert result["escalated"] is True
+    assert result["confidence"] == 0.4
+    assert result["answer"] == ""
+    llm_mock.generate.assert_not_called()
+
+
+async def test_support_no_chunks_escalates_without_generate(
+    llm_mock: MagicMock, app_settings: Settings
+) -> None:
+    async def fake_retriever(state: AgentState) -> list[RetrievedChunk]:
+        return []
+
+    graph = build_graph(llm_mock, app_settings, retriever=fake_retriever)
+    result = await graph.ainvoke(_state())
+    assert result["escalated"] is True
+    assert result["confidence"] == 0.0
+    llm_mock.generate.assert_not_called()
 
 
 async def test_vision_enriches_query_then_classifies(
     llm_mock: MagicMock, app_settings: Settings
 ) -> None:
     llm_mock.chat_with_vision = AsyncMock(return_value="Ошибка 1С:8330, поле Договор")
-    llm_mock.generate = AsyncMock(side_effect=['{"intent": "greeting"}', "ok"])
     graph = build_graph(llm_mock, app_settings)
     result = await graph.ainvoke(_state(text="что это?", image_base64="AAA"))
     llm_mock.chat_with_vision.assert_awaited_once()
-    assert "Ошибка 1С:8330" in result["query"]
     assert "что это?" in result["query"]
 
 
-async def test_route_uses_settings_threshold_twice(app_settings: Settings) -> None:
-    state: AgentState = {"confidence": 0.79}
-    first = await route(state, settings=app_settings)
-    merged: AgentState = {**state, "escalated": first["escalated"]}
-    second = await route(merged, settings=app_settings)
-    assert first == second == {"escalated": True}
-
-    high = await route({"confidence": 0.8}, settings=app_settings)
-    assert high == {"escalated": False}
-
-
-async def test_parse_intent_unknown_becomes_support() -> None:
-    assert parse_intent('{"intent": "greeting"}') == "greeting"
-    assert parse_intent("не json") == "support"
-    assert parse_intent('{"intent": "unknown"}') == "support"
-
-
-async def test_parse_confidence_clamps_and_falls_back() -> None:
-    assert parse_confidence('{"confidence": 1.4}') == 1.0
-    assert parse_confidence('{"confidence": -1}') == 0.0
-    assert parse_confidence("нет числа") == 0.0
+async def test_classify_rules() -> None:
+    assert (await classify({"query": "привет!"}))["intent"] == "greeting"
+    assert (await classify({"query": "спасибо"}))["intent"] == "greeting"
+    assert (await classify({"query": "как провести документ"}))["intent"] == "support"
+    assert (await classify({"query": "какая у вас погода"}))["intent"] == "off_topic"
+    empty = await classify({"query": "   "})
+    assert empty["intent"] == "empty"
+    assert empty["answer"] == _EMPTY_REPLY
 
 
 async def test_run_chat_turn_maps_contract(
@@ -139,15 +147,11 @@ async def test_run_chat_turn_maps_contract(
         return []
 
     graph = build_graph(llm_mock, app_settings, retriever=fake_retriever)
-    llm_mock.generate = AsyncMock(
-        side_effect=['{"intent": "support"}', "Ответ", '{"confidence": 0.9}']
-    )
     monkeypatch.setattr(agent_service, "get_graph", lambda: graph)
 
     response = await run_chat_turn(chat_request)
     assert response.message_id == chat_request.message_id
-    assert response.text == "Ответ"
-    assert response.confidence == 0.9
-    assert response.escalated is False
+    assert response.escalated is True
+    assert response.confidence == 0.0
     assert response.sources == []
     assert isinstance(response.conversation_id, UUID)

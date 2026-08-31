@@ -31,7 +31,8 @@ async def generate(state: AgentState, *, llm: GigaChatService) -> dict[str, obje
     answer = await llm.generate(messages)
 
     if intent == "support":
-        return {"answer": answer}
+        confidence = max((c["score"] for c in chunks), default=0.0)
+        return {"answer": answer, "confidence": confidence}
     return {"answer": answer, "confidence": 1.0, "escalated": False}
 
 

@@ -7,6 +7,7 @@ from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, settings
+from app.core.redis import increment_kb_version
 from app.models.chunk import Chunk
 from app.models.document import Document
 from app.models.enums import DocumentStatus
@@ -60,6 +61,7 @@ async def index_document(
     document.status = DocumentStatus.INDEXED
     document.indexed_at = utc_now()
     await session.commit()
+    await increment_kb_version()
     await session.refresh(document)
     return document
 

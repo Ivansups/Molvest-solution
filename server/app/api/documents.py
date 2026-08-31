@@ -5,11 +5,20 @@ from json import JSONDecodeError
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.gigachat_client import get_gigachat_service
-from app.db.session import get_session
+from app.db.session import SessionLocal, get_session
 from app.models.enums import DocumentStatus, FileType
 from app.schemas.documents import (
     DocumentDetailOut,
@@ -23,7 +32,6 @@ from app.selectors import documents as document_selectors
 from app.services.documents import (
     DocumentNotFoundError,
     DuplicateDocumentError,
-    ReindexFailedError,
     UnsupportedFileTypeError,
     delete_document,
     reindex_document,
@@ -115,29 +123,31 @@ async def delete_document_route(session: SessionDep, document_id: UUID) -> None:
         ) from exc
 
 
-@router.post("/{document_id}/reindex")
+@router.post("/{document_id}/reindex", status_code=status.HTTP_202_ACCEPTED)
 async def reindex_document_route(
     session: SessionDep,
+    background_tasks: BackgroundTasks,
     document_id: UUID,
-) -> DocumentDetailOut:
-    """Чанкит, эмбеддит и пересоздаёт чанки документа."""
-    try:
-        document = await reindex_document(
+) -> DocumentOut:
+    """Запускает реиндексацию в фоне и сразу возвращает документ."""
+    document = await document_selectors.get_document(session, document_id)
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Не найден")
+    document.status = DocumentStatus.PENDING
+    await session.commit()
+    await session.refresh(document)
+    background_tasks.add_task(_reindex_in_background, document_id)
+    return document_to_out(document)
+
+
+async def _reindex_in_background(document_id: UUID) -> None:
+    """Реиндексирует документ собственной сессией вне цикла запроса."""
+    async with SessionLocal() as session:
+        await reindex_document(
             session,
             document_id,
             llm=get_gigachat_service(),
         )
-    except DocumentNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
-        ) from exc
-    except ReindexFailedError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
-    return document_to_detail(document)
 
 
 def _parse_metadata(raw: str | None) -> dict[str, object]:

@@ -109,45 +109,35 @@ async def test_delete_removes_chunks_and_file(
     assert again.status_code == 404
 
 
-class _FakeEmbedder:
-    """Эмбеддинги без сети — для reindex через API."""
-
-    async def get_embeddings(self, texts: list[str]) -> list[list[float]]:
-        vector = [0.1] * 1024
-        return [vector for _ in texts]
-
-
-async def test_reindex_indexes_document_idempotently(
+async def test_reindex_schedules_background_task(
     api_client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import app.api.documents as documents_api
 
-    monkeypatch.setattr(
-        documents_api,
-        "get_gigachat_service",
-        lambda: _FakeEmbedder(),
-    )
+    ran: list[UUID] = []
+
+    async def fake_background(document_id: UUID) -> None:
+        ran.append(document_id)
+
+    monkeypatch.setattr(documents_api, "_reindex_in_background", fake_background)
     code, created = await _upload(
         api_client,
         "reindex.md",
         body=("Как провести документ в 1С. ".encode()),
     )
     assert code == 201
-    document_id = created["id"]
-    first = await api_client.post(f"/api/documents/{document_id}/reindex")
-    second = await api_client.post(f"/api/documents/{document_id}/reindex")
-    assert first.status_code == 200
-    assert second.status_code == 200
-    assert first.json()["status"] == DocumentStatus.INDEXED
-    assert second.json()["status"] == DocumentStatus.INDEXED
-    assert len(first.json()["chunks"]) == 1
-    assert len(second.json()["chunks"]) == 1
+    document_id = UUID(str(created["id"]))
+
+    accepted = await api_client.post(f"/api/documents/{document_id}/reindex")
+    assert accepted.status_code == 202
+    assert accepted.json()["status"] == DocumentStatus.PENDING
+    assert accepted.json()["id"] == str(document_id)
+    assert ran == [document_id]
 
 
-async def test_reindex_unparseable_document_fails(api_client: AsyncClient) -> None:
-    code, created = await _upload(api_client, "broken.pdf")
-    assert code == 201
-    document_id = created["id"]
-    response = await api_client.post(f"/api/documents/{document_id}/reindex")
-    assert response.status_code == 422
+async def test_reindex_unknown_document_is_404(
+    api_client: AsyncClient,
+) -> None:
+    response = await api_client.post(f"/api/documents/{uuid4()}/reindex")
+    assert response.status_code == 404

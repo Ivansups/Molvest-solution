@@ -6,14 +6,13 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from app.agent.nodes.classify import classify
-from app.agent.nodes.confidence import confidence_check
 from app.agent.nodes.generate import generate
 from app.agent.nodes.retrieve import retrieve
-from app.agent.nodes.route import route
 from app.agent.nodes.vision import vision
-from app.agent.state import AgentState, RetrievedChunk
+from app.agent.state import AgentState
 from app.core.config import Settings, settings
 from app.core.gigachat_client import GigaChatService, get_gigachat_service
+from app.core.redis import get_cached_answer, get_kb_version, set_cached_answer
 from app.rag.retrieval import Retriever, make_retriever
 
 
@@ -31,35 +30,48 @@ def build_graph(
         return await vision(state, llm=llm)
 
     async def classify_node(state: AgentState) -> dict[str, object]:
-        return await classify(state, llm=llm)
+        return await classify(state)
 
     async def generate_node(state: AgentState) -> dict[str, object]:
-        return await generate(state, llm=llm)
+        return await _cached_generate(state, llm=llm)
 
-    async def confidence_node(state: AgentState) -> dict[str, float]:
-        return await confidence_check(state, llm=llm)
-
-    async def retrieve_node(state: AgentState) -> dict[str, list[RetrievedChunk]]:
+    async def retrieve_node(state: AgentState) -> dict[str, object]:
         return await retrieve(state, retriever=effective_retriever)
-
-    async def route_node(state: AgentState) -> dict[str, bool]:
-        return await route(state, settings=app_settings)
 
     builder.add_node("vision", vision_node)
     builder.add_node("classify", classify_node)
     builder.add_node("retrieve", retrieve_node)
     builder.add_node("generate", generate_node)
-    builder.add_node("confidence_check", confidence_node)
-    builder.add_node("route", route_node)
 
     builder.add_edge(START, "vision")
     builder.add_edge("vision", "classify")
     builder.add_conditional_edges("classify", _after_classify)
-    builder.add_edge("retrieve", "generate")
-    builder.add_conditional_edges("generate", _after_generate)
-    builder.add_edge("confidence_check", "route")
-    builder.add_edge("route", END)
+    builder.add_conditional_edges("retrieve", _after_retrieve)
+    builder.add_edge("generate", END)
     return builder.compile()
+
+
+async def _cached_generate(
+    state: AgentState, llm: GigaChatService
+) -> dict[str, object]:
+    """Генерация с кэшем ответов по версии БЗ."""
+    query = state.get("query") or ""
+    try:
+        kb_ver = await get_kb_version()
+        cached = await get_cached_answer(query, kb_ver)
+    except Exception:
+        cached = None
+    if cached is not None:
+        return {"answer": cached}
+
+    result = await generate(state, llm=llm)
+    answer = result.get("answer") or ""
+    if isinstance(answer, str) and answer:
+        try:
+            await set_cached_answer(query, answer, kb_ver)
+        except Exception:
+            pass
+    return result
 
 
 def get_graph() -> CompiledStateGraph[AgentState, None]:
@@ -81,10 +93,12 @@ def _after_classify(
     return "retrieve"
 
 
-def _after_generate(state: AgentState) -> Literal["confidence_check", "__end__"]:
-    if state.get("intent") == "support":
-        return "confidence_check"
-    return "__end__"
+def _after_retrieve(state: AgentState) -> Literal["generate", "__end__"]:
+    chunks = state.get("chunks") or []
+    confidence = max((c["score"] for c in chunks), default=0.0)
+    if confidence < settings.confidence_threshold:
+        return "__end__"
+    return "generate"
 
 
 _graph: CompiledStateGraph[AgentState, None] | None = None

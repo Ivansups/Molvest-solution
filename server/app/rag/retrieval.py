@@ -3,11 +3,12 @@
 from collections.abc import Awaitable, Callable
 from uuid import UUID, uuid5
 
-from sqlalchemy import select
+from sqlalchemy import Float, cast, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.state import AgentState, RetrievedChunk
 from app.core.config import Settings, settings
+from app.core.redis import get_cached_embeddings, set_cached_embeddings
 from app.db.session import SessionLocal
 from app.models.chunk import Chunk
 from app.models.document import Document
@@ -62,29 +63,38 @@ async def retrieve_chunks(
     """Возвращает top_k ближайших чанков установки по косинусной близости.
 
     Эмбеддинг запроса получаем снаружи транзакции, сам поиск — единственный
-    SELECT без изменения состояния.
+    SELECT без изменения состояния. Используем кэш Redis для эмбеддингов.
     """
     if not query.strip():
         return []
-    embedding = (await llm.get_embeddings([query]))[0]
 
+    # Пробуем получить эмбеддинги из кэша
+    cached = await get_cached_embeddings(query)
+    if cached is not None:
+        embedding = cached[0]
+    else:
+        embedding = (await llm.get_embeddings([query]))[0]
+        await set_cached_embeddings(query, [embedding])
+
+    distance_col = Chunk.embedding.cosine_distance(embedding).label("distance")
     stmt = (
-        select(Chunk, Document.title)
+        select(Chunk, Document.title, cast(distance_col, Float))
         .join(Document, Document.id == Chunk.document_id)
         .where(
             Document.installation_id == installation_id,
             Document.status == DocumentStatus.INDEXED,
         )
-        .order_by(Chunk.embedding.cosine_distance(embedding))
+        .order_by(distance_col)
         .limit(top_k)
     )
     chunks: list[RetrievedChunk] = []
-    for chunk, title in (await session.execute(stmt)).all():
+    for chunk, title, distance in (await session.execute(stmt)).all():
         chunks.append(
             RetrievedChunk(
                 document_id=str(chunk.document_id),
                 title=title,
                 chunk_text=chunk.content,
+                score=round(1.0 - float(distance), 4),
             )
         )
     return chunks

@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     gigachat_verify_ssl_certs: bool = False
     gigachat_timeout: float = 60.0
     database_url: str = "postgresql+asyncpg://postgres:postgres@db:5432/molvest"
+    redis_url: str = "redis://redis:6379/0"
     confidence_threshold: float = 0.8
     top_k: int = 5
     max_chunk_size: int = 512

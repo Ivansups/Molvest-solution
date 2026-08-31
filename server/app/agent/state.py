@@ -11,6 +11,7 @@ class RetrievedChunk(TypedDict):
     document_id: str
     title: str
     chunk_text: str
+    score: float
 
 
 class AgentState(TypedDict, total=False):
