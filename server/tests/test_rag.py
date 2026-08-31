@@ -8,14 +8,18 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.chunk import Chunk
+from app.models.chunk import EMBEDDING_DIMENSIONS, Chunk
 from app.models.document import Document
 from app.models.enums import DocumentStatus, FileType
 from app.rag.chunking import chunk_text, extract_text
 from app.rag.ingestion import IngestionError, index_document
+from app.rag.protocols import (
+    EmbeddingDimensionError,
+    ensure_embedding_dimensions,
+)
 from app.rag.retrieval import retrieve_chunks
 
-DIM = 1024
+DIM = EMBEDDING_DIMENSIONS
 
 
 def _embed(text: str) -> list[float]:
@@ -137,6 +141,51 @@ async def test_reindex_is_atomic_no_duplicate_chunks(
         select(func.count()).select_from(Chunk).where(Chunk.document_id == doc.id)
     )
     assert count == 1
+
+
+def test_ensure_embedding_dimensions_accepts_schema_size() -> None:
+    ensure_embedding_dimensions([[0.0] * DIM])
+
+
+def test_ensure_embedding_dimensions_rejects_mismatch() -> None:
+    with pytest.raises(EmbeddingDimensionError, match="2560"):
+        ensure_embedding_dimensions([[0.0] * 2560])
+
+
+class _WrongDimEmbedder:
+    """Имитирует стороннюю модель с другой размерностью (EmbeddingsGigaR)."""
+
+    async def get_embeddings(self, texts: list[str]) -> list[list[float]]:
+        return [[0.0] * 2560 for _ in texts]
+
+
+async def test_index_rejects_wrong_embedding_dim(
+    db_session: AsyncSession,
+    tmp_path: Path,
+) -> None:
+    doc = await _indexed_document(db_session, tmp_path)
+    with pytest.raises(IngestionError, match="1024"):
+        await index_document(db_session, doc, _WrongDimEmbedder())
+    assert doc.status == DocumentStatus.FAILED
+    assert "indexing_error" in doc.extra_metadata
+
+
+async def test_retrieve_rejects_wrong_embedding_dim(
+    db_session: AsyncSession,
+    tmp_path: Path,
+    fake_llm: FakeEmbedder,
+) -> None:
+    installation = uuid4()
+    doc = await _indexed_document(db_session, tmp_path, installation_id=installation)
+    await index_document(db_session, doc, fake_llm)
+    with pytest.raises(EmbeddingDimensionError, match="2560"):
+        await retrieve_chunks(
+            db_session,
+            query="как провести документ",
+            installation_id=installation,
+            llm=_WrongDimEmbedder(),
+            top_k=5,
+        )
 
 
 async def test_index_failure_marks_failed(

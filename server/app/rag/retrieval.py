@@ -13,7 +13,7 @@ from app.db.session import SessionLocal
 from app.models.chunk import Chunk
 from app.models.document import Document
 from app.models.enums import DocumentStatus
-from app.rag.protocols import EmbeddingsProvider
+from app.rag.protocols import EmbeddingsProvider, ensure_embedding_dimensions
 
 Retriever = Callable[[AgentState], Awaitable[list[RetrievedChunk]]]
 
@@ -74,6 +74,8 @@ async def retrieve_chunks(
         embedding = cached[0]
     else:
         embedding = (await llm.get_embeddings([query]))[0]
+    ensure_embedding_dimensions([embedding])
+    if cached is None:
         await set_cached_embeddings(query, [embedding])
 
     distance_col = Chunk.embedding.cosine_distance(embedding).label("distance")

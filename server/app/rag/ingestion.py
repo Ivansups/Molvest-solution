@@ -13,7 +13,7 @@ from app.models.document import Document
 from app.models.enums import DocumentStatus
 from app.models.time import utc_now
 from app.rag.chunking import extract_chunks
-from app.rag.protocols import EmbeddingsProvider
+from app.rag.protocols import EmbeddingsProvider, ensure_embedding_dimensions
 
 
 class IngestionError(Exception):
@@ -36,6 +36,7 @@ async def index_document(
     try:
         chunks = await _build_chunks(document, cfg)
         embeddings = await llm.get_embeddings(chunks)
+        ensure_embedding_dimensions(embeddings)
     except Exception as exc:
         await _mark_failed(session, document, str(exc))
         raise IngestionError(str(exc)) from exc
