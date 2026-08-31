@@ -58,6 +58,35 @@ async def test_unsupported_type_is_rejected(api_client: AsyncClient) -> None:
     assert listed.json()["total"] == 0
 
 
+async def test_upload_ignores_swagger_metadata_placeholder(
+    api_client: AsyncClient,
+) -> None:
+    response = await api_client.post(
+        "/api/documents",
+        files={"file": ("guide.md", b"# 1C", "text/markdown")},
+        data={
+            "title": "Гайд",
+            "installation_id": str(INSTALL_A),
+            "metadata": "string",
+        },
+    )
+    assert response.status_code == 201
+    assert response.json()["status"] == DocumentStatus.PENDING
+
+
+async def test_upload_rejects_non_object_metadata(api_client: AsyncClient) -> None:
+    response = await api_client.post(
+        "/api/documents",
+        files={"file": ("guide.md", b"# 1C", "text/markdown")},
+        data={
+            "title": "Гайд",
+            "installation_id": str(INSTALL_A),
+            "metadata": "[1]",
+        },
+    )
+    assert response.status_code == 422
+
+
 async def test_duplicate_name_conflicts_per_installation(
     api_client: AsyncClient,
 ) -> None:

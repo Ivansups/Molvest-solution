@@ -75,7 +75,7 @@ async def upload_document_route(
     file: UploadFile,
     title: Annotated[str, Form()],
     installation_id: Annotated[UUID, Form()],
-    metadata: Annotated[str | None, Form()] = None,
+    metadata: Annotated[str | None, Form(examples=["{}"])] = None,
 ) -> DocumentOut:
     """Сохраняет файл и запись со статусом PENDING. Индексации нет."""
     try:
@@ -151,12 +151,14 @@ async def _reindex_in_background(document_id: UUID) -> None:
 
 
 def _parse_metadata(raw: str | None) -> dict[str, object]:
-    if raw is None or raw == "":
+    # Swagger подставляет в optional Form слово "string" — это не JSON.
+    stripped = "" if raw is None else raw.strip()
+    if not stripped or stripped == "string":
         return {}
     try:
-        parsed: object = json.loads(raw)
-    except JSONDecodeError as exc:
-        raise ValueError("metadata должен быть JSON-объектом") from exc
+        parsed: object = json.loads(stripped)
+    except JSONDecodeError as parse_error:
+        raise ValueError("metadata должен быть JSON-объектом") from parse_error
     if not isinstance(parsed, dict):
         raise ValueError("metadata должен быть JSON-объектом")
     return parsed
