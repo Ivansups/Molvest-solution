@@ -28,8 +28,9 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
     confidence_threshold: float = 0.8
     top_k: int = 5
-    max_chunk_size: int = 512
-    chunk_overlap: int = 128
+    # 512 слов ≈ 900 токенов, окно Embeddings — 512. Держим запас.
+    max_chunk_size: int = 180
+    chunk_overlap: int = 40
     upload_dir: str = "./data/uploads"
     internal_service_token: str = ""
 

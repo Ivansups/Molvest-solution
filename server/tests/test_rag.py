@@ -11,7 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.chunk import EMBEDDING_DIMENSIONS, Chunk
 from app.models.document import Document
 from app.models.enums import DocumentStatus, FileType
-from app.rag.chunking import chunk_text, extract_text
+from app.rag.chunking import (
+    EMBEDDING_TOKEN_LIMIT,
+    chunk_text,
+    clamp_to_embedding_window,
+    estimate_tokens,
+    extract_text,
+)
 from app.rag.ingestion import IngestionError, index_document
 from app.rag.protocols import (
     EmbeddingDimensionError,
@@ -97,6 +103,18 @@ def test_chunk_text_no_overlap_when_overlap_ge_size() -> None:
     chunks = chunk_text(text, max_chunk_size=5, chunk_overlap=5)
     assert len(chunks) == 1
     assert chunks[0] == text
+
+
+def test_long_chunk_is_clamped_to_embedding_window() -> None:
+    text = " ".join(f"слово{i}" for i in range(512))
+    chunks = chunk_text(text, max_chunk_size=512, chunk_overlap=0)
+    assert len(chunks) > 1
+    limit = EMBEDDING_TOKEN_LIMIT - 40
+    assert all(estimate_tokens(chunk) <= limit for chunk in chunks)
+
+
+def test_clamp_keeps_short_chunk() -> None:
+    assert clamp_to_embedding_window(["короткий текст"]) == ["короткий текст"]
 
 
 def test_extract_text_markdown() -> None:
