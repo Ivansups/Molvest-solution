@@ -15,7 +15,6 @@ from app.core.config import Settings, settings
 
 ChatRole = Literal["system", "user", "assistant"]
 
-EMBEDDINGS_MODEL = "Embeddings"
 _DATA_URL_PREFIX = "data:image/png;base64,"
 
 
@@ -70,7 +69,10 @@ class GigaChatService:
 
     async def get_embeddings(self, texts: list[str]) -> list[list[float]]:
         """Векторизует тексты моделью эмбеддингов GigaChat."""
-        result = await self._client.aembeddings(texts, model=EMBEDDINGS_MODEL)
+        result = await self._client.aembeddings(
+            texts,
+            model=self._settings.gigachat_embeddings_model,
+        )
         return [item.embedding for item in result.data]
 
 
