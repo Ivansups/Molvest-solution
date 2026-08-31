@@ -1,6 +1,7 @@
 """Индексация документа: чанкинг, эмбеддинги и запись в pgvector."""
 
 import asyncio
+import logging
 from pathlib import Path
 
 from sqlalchemy import delete
@@ -14,6 +15,8 @@ from app.models.enums import DocumentStatus
 from app.models.time import utc_now
 from app.rag.chunking import extract_chunks
 from app.rag.protocols import EmbeddingsProvider, ensure_embedding_dimensions
+
+logger = logging.getLogger(__name__)
 
 
 class IngestionError(Exception):
@@ -33,11 +36,13 @@ async def index_document(
     чтобы retrieval не видел документ наполовину обновлённым.
     """
     cfg = app_settings or settings
+    logger.info("индексация начата document_id=%s", document.id)
     try:
         chunks = await _build_chunks(document, cfg)
         embeddings = await llm.get_embeddings(chunks)
         ensure_embedding_dimensions(embeddings)
     except Exception as exc:
+        logger.exception("индексация не удалась document_id=%s", document.id)
         await _mark_failed(session, document, str(exc))
         raise IngestionError(str(exc)) from exc
 
@@ -64,6 +69,11 @@ async def index_document(
     await session.commit()
     await increment_kb_version()
     await session.refresh(document)
+    logger.info(
+        "индексация готова document_id=%s chunks=%s",
+        document.id,
+        len(rows),
+    )
     return document
 
 

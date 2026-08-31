@@ -1,6 +1,7 @@
 """REST для админки базы знаний: список, загрузка, карточка, удаление, reindex."""
 
 import json
+import logging
 from json import JSONDecodeError
 from typing import Annotated
 from uuid import UUID
@@ -32,6 +33,7 @@ from app.selectors import documents as document_selectors
 from app.services.documents import (
     DocumentNotFoundError,
     DuplicateDocumentError,
+    ReindexFailedError,
     UnsupportedFileTypeError,
     delete_document,
     reindex_document,
@@ -39,6 +41,8 @@ from app.services.documents import (
 )
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
+
+logger = logging.getLogger(__name__)
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
@@ -142,11 +146,17 @@ async def reindex_document_route(
 
 async def _reindex_in_background(document_id: UUID) -> None:
     """Реиндексирует документ собственной сессией вне цикла запроса."""
-    async with SessionLocal() as session:
-        await reindex_document(
-            session,
+    try:
+        async with SessionLocal() as session:
+            await reindex_document(
+                session,
+                document_id,
+                llm=get_gigachat_service(),
+            )
+    except ReindexFailedError:
+        logger.warning(
+            "фоновая реиндексация не удалась document_id=%s",
             document_id,
-            llm=get_gigachat_service(),
         )
 
 
