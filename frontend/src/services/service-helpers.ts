@@ -1,4 +1,5 @@
 import axios from "axios";
+import { getClientSession } from "@/src/lib/client-session";
 
 export class ApiServiceError extends Error {
   status?: number;
@@ -46,21 +47,12 @@ export function unsupportedEndpoint(endpoint: string, message: string): never {
 }
 
 export function getStoredInstallationId(): string {
-  if (typeof window === "undefined") {
-    throw new ApiServiceError("Не удалось определить installation_id текущего пользователя.");
-  }
-
-  const raw = window.localStorage.getItem("molvest-user");
-  if (!raw) {
+  const user = getClientSession();
+  if (!user) {
     throw new ApiServiceError("Сначала выполните вход в панель поддержки.");
   }
 
-  const parsed = JSON.parse(raw) as { installationId?: string };
-  if (!parsed.installationId) {
-    throw new ApiServiceError("В сессии отсутствует installation_id.");
-  }
-
-  return parsed.installationId;
+  return user.installationId;
 }
 
 export async function delay<T>(value: T, timeout = 200): Promise<T> {

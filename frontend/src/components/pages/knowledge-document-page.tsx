@@ -1,8 +1,10 @@
+"use client";
+
 import { useEffect, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Controller, useForm } from "react-hook-form";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams, useRouter } from "next/navigation";
 import { z } from "zod";
 import { ApiStateCard } from "@/src/components/common/api-state-card";
 import { FileDropzone } from "@/src/components/common/file-dropzone";
@@ -38,8 +40,9 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 export function KnowledgeDocumentPage() {
-  const navigate = useNavigate();
-  const { docId } = useParams();
+  const router = useRouter();
+  const params = useParams<{ docId: string }>();
+  const docId = params.docId;
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [versionDialogOpen, setVersionDialogOpen] = useState(false);
@@ -132,7 +135,7 @@ export function KnowledgeDocumentPage() {
             Просмотр чанков и редактирование карточки документа.
           </p>
         </div>
-        <Button variant="outline" onClick={() => navigate("/knowledge-base")}>
+        <Button variant="outline" onClick={() => router.push("/knowledge-base")}>
           Назад к списку
         </Button>
       </div>

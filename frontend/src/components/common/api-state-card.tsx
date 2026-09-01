@@ -1,5 +1,5 @@
 import { AlertCircle, ServerCrash } from "lucide-react";
-import { Link } from "react-router-dom";
+import Link from "next/link";
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 
@@ -42,7 +42,7 @@ export function ApiStateCard({
           ) : null}
           {actionHref && actionLabel ? (
             <Button variant="outline" asChild>
-              <Link to={actionHref}>{actionLabel}</Link>
+              <Link href={actionHref}>{actionLabel}</Link>
             </Button>
           ) : null}
         </CardContent>

@@ -1,3 +1,5 @@
+"use client";
+
 import {
   BarChart3,
   Database,
@@ -6,10 +8,18 @@ import {
   MessageSquare,
   Settings,
 } from "lucide-react";
-import { NavLink } from "react-router-dom";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { BrandMark } from "@/src/components/common/brand-mark";
 import { cn } from "@/src/lib/utils";
 import type { AppRole } from "@/src/types/domain";
+
+function isNavActive(pathname: string, href: string): boolean {
+  if (href === "/") {
+    return pathname === "/";
+  }
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
 
 const navigation: Array<{
   to: string;
@@ -26,6 +36,8 @@ const navigation: Array<{
 ];
 
 export function AppSidebar({ role }: { role: AppRole }) {
+  const pathname = usePathname();
+
   return (
     <aside className="accent-grid flex h-full w-72 flex-col border-r border-white/10 bg-[#10284d] px-5 py-6 text-white">
       <BrandMark />
@@ -44,20 +56,18 @@ export function AppSidebar({ role }: { role: AppRole }) {
           .map((item) => {
             const Icon = item.icon;
             return (
-              <NavLink
+              <Link
                 key={item.to}
-                to={item.to}
-                className={({ isActive }) =>
-                  cn(
-                    "flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium text-white/72 transition-all hover:bg-white/8 hover:text-white",
-                    isActive &&
-                      "bg-gradient-to-r from-white/14 to-white/6 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]",
-                  )
-                }
+                href={item.to}
+                className={cn(
+                  "flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium text-white/72 transition-all hover:bg-white/8 hover:text-white",
+                  isNavActive(pathname, item.to) &&
+                    "bg-gradient-to-r from-white/14 to-white/6 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]",
+                )}
               >
                 <Icon className="h-4 w-4" />
                 {item.label}
-              </NavLink>
+              </Link>
             );
           })}
       </nav>

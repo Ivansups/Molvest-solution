@@ -1,7 +1,9 @@
+"use client";
+
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, RefreshCcw, Search, Trash2 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useRouter } from "next/navigation";
 import { ApiStateCard } from "@/src/components/common/api-state-card";
 import { DataTablePagination } from "@/src/components/common/data-table-pagination";
 import { DocumentUploadDialog } from "@/src/components/common/document-upload-dialog";
@@ -31,7 +33,7 @@ import { documentService } from "@/src/services/document-service";
 import type { FileType } from "@/src/types/api";
 
 export function KnowledgeBasePage() {
-  const navigate = useNavigate();
+  const router = useRouter();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
@@ -207,7 +209,7 @@ export function KnowledgeBasePage() {
                       <button
                         type="button"
                         className="text-left font-medium text-secondary hover:underline"
-                        onClick={() => navigate(`/knowledge-base/${item.id}`)}
+                        onClick={() => router.push(`/knowledge-base/${item.id}`)}
                       >
                         {item.title}
                       </button>
@@ -222,7 +224,7 @@ export function KnowledgeBasePage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => navigate(`/knowledge-base/${item.id}`)}
+                          onClick={() => router.push(`/knowledge-base/${item.id}`)}
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>

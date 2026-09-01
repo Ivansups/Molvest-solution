@@ -1,23 +1,20 @@
+"use client";
+
 import Image from "next/image";
+import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Bot,
-  Database,
   Ellipsis,
   ImagePlus,
-  SearchCheck,
   Send,
   ShieldAlert,
-  Sparkles,
-  type LucideIcon,
 } from "lucide-react";
-import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiStateCard } from "@/src/components/common/api-state-card";
 import { FileDropzone } from "@/src/components/common/file-dropzone";
 import { MessageBubble } from "@/src/components/common/message-bubble";
 import { OperatorAssistPanel } from "@/src/components/common/operator-assist-panel";
-import { PublicPortalHeader } from "@/src/components/common/public-portal-header";
 import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
@@ -38,8 +35,7 @@ import { ScrollArea } from "@/src/components/ui/scroll-area";
 import { Separator } from "@/src/components/ui/separator";
 import { Spinner } from "@/src/components/ui/spinner";
 import { Textarea } from "@/src/components/ui/textarea";
-import type { ConversationMessage } from "@/src/types/domain";
-import { useApp } from "@/src/hooks/use-app-context";
+import type { ConversationMessage, UserSession } from "@/src/types/domain";
 import { useToast } from "@/src/hooks/use-toast";
 import { formatDateTime } from "@/src/lib/format";
 import { chatService } from "@/src/services/chat-service";
@@ -53,44 +49,20 @@ async function fileToDataUrl(file: File) {
   });
 }
 
-function InfoPill({
-  icon: Icon,
-  title,
-  text,
-}: {
-  icon: LucideIcon;
-  title: string;
-  text: string;
-}) {
-  return (
-    <div className="rounded-[24px] border border-white/10 bg-[#0d2448]/58 p-4 backdrop-blur">
-      <Icon className="h-5 w-5 text-white" />
-      <p className="mt-4 text-sm font-medium text-white">{title}</p>
-      <p className="mt-1 text-sm leading-6 text-white/70">{text}</p>
-    </div>
-  );
-}
-
-function MiniStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-[20px] border border-border/60 bg-white/80 p-4">
-      <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">{label}</p>
-      <p className="mt-2 text-sm font-medium text-secondary">{value}</p>
-    </div>
-  );
-}
-
 export function ChatPage({
   detailMode = false,
-  mode = "auto",
+  mode,
+  user = null,
 }: {
   detailMode?: boolean;
-  mode?: "auto" | "guest" | "support";
+  mode: "guest" | "support";
+  user?: UserSession | null;
 }) {
-  const { ticketId } = useParams();
-  const navigate = useNavigate();
+  const params = useParams<{ ticketId: string }>();
+  const ticketId = params.ticketId;
+  const router = useRouter();
   const queryClient = useQueryClient();
-  const { currentUser } = useApp();
+  const currentUser = user;
   const { toast } = useToast();
   const [draft, setDraft] = useState("");
   const [guestConversationId, setGuestConversationId] = useState<string | null>(null);
@@ -102,8 +74,7 @@ export function ChatPage({
     base64: string;
   } | null>(null);
 
-  const isSupportMode =
-    mode === "support" || (mode === "auto" ? Boolean(currentUser) : false);
+  const isSupportMode = mode === "support";
 
   const conversationsQuery = useQuery({
     queryKey: ["conversations"],
@@ -117,9 +88,9 @@ export function ChatPage({
 
   useEffect(() => {
     if (isSupportMode && !ticketId && conversationsQuery.data?.[0]?.id) {
-      navigate(`/chat/support/${conversationsQuery.data[0].id}`, { replace: true });
+      router.replace(`/chat/support/${conversationsQuery.data[0].id}`);
     }
-  }, [conversationsQuery.data, isSupportMode, navigate, ticketId]);
+  }, [conversationsQuery.data, isSupportMode, router, ticketId]);
 
   const conversationQuery = useQuery({
     queryKey: ["conversation", selectedId],
@@ -202,93 +173,7 @@ export function ChatPage({
 
   if (!isSupportMode) {
     return (
-      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6 px-4 py-8 lg:px-0">
-        <PublicPortalHeader current="chat" />
-        <section className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-          <div className="hero-panel soft-shadow overflow-hidden rounded-[30px] p-8 text-white lg:p-10">
-            <div className="max-w-2xl">
-              <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">
-                Гостевой доступ
-              </p>
-              <h1 className="mt-4 text-4xl font-semibold leading-tight tracking-[-0.04em] text-balance">
-                Гостевой чат по вопросам 1С
-              </h1>
-              <p className="mt-4 max-w-xl text-sm leading-7 text-white/72">
-                Пользовательский канал без авторизации для текстовых обращений и
-                загрузки скриншотов ошибок. Закрытая панель поддержки остаётся
-                отдельным защищённым контуром.
-              </p>
-            </div>
-            <div className="mt-10 grid gap-3 sm:grid-cols-3">
-              <InfoPill
-                icon={Database}
-                title="База знаний"
-                text="Регламенты, кейсы и инструкции 1С"
-              />
-              <InfoPill
-                icon={SearchCheck}
-                title="RAG-поиск"
-                text="Подбор релевантных фрагментов перед ответом"
-              />
-              <InfoPill
-                icon={Sparkles}
-                title="GigaChat"
-                text="Генерация ответа и Vision-анализ скриншотов"
-              />
-            </div>
-          </div>
-          <div className="grid gap-4">
-            <Card className="shell-panel rounded-[30px]">
-              <CardContent className="grid gap-4 p-6">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.22em] text-primary">
-                    Контур работы
-                  </p>
-                  <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-secondary">
-                    Публичный чат связан с закрытой support-панелью
-                  </h2>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <MiniStat label="Канал" value="Web Widget" />
-                  <MiniStat label="Модель" value="GigaChat" />
-                  <MiniStat label="Вложения" value="PNG / JPEG" />
-                  <MiniStat label="Маршрут" value="Chat → RAG" />
-                </div>
-                <div className="rounded-[24px] border border-border/70 bg-slate-50/80 p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                      <Bot className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-secondary">
-                        Закрытый контур для сотрудников
-                      </p>
-                      <p className="text-sm text-slate-500">
-                        База знаний, операторская и аналитика доступны только после входа
-                      </p>
-                    </div>
-                  </div>
-                  <Button variant="outline" className="mt-4 w-full sm:w-auto" asChild>
-                    <Link to="/login">Перейти ко входу поддержки</Link>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="shell-panel rounded-[30px]">
-              <CardContent className="p-6">
-                <p className="text-[11px] uppercase tracking-[0.22em] text-primary">
-                  Что поможет ответу
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Badge>Код ошибки</Badge>
-                  <Badge>Название формы 1С</Badge>
-                  <Badge>Действие пользователя</Badge>
-                  <Badge>Скриншот экрана</Badge>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </section>
+      <>
         <Card className="shell-panel overflow-hidden rounded-[30px]">
           <CardContent className="grid gap-0 p-0 xl:grid-cols-[minmax(0,1fr)_320px]">
             <div className="flex min-h-[640px] flex-col">
@@ -390,7 +275,7 @@ export function ChatPage({
                     className="mt-4 w-full border-white/16 !bg-white !text-secondary hover:!bg-white/92"
                     asChild
                   >
-                    <Link to="/login">Открыть вход для поддержки</Link>
+                    <Link href="/login">Открыть вход для поддержки</Link>
                   </Button>
                 </div>
               </div>
@@ -421,7 +306,7 @@ export function ChatPage({
             />
           </DialogContent>
         </Dialog>
-      </div>
+      </>
     );
   }
 
@@ -478,7 +363,7 @@ export function ChatPage({
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => navigate(`/chat/support/${item.id}`)}
+                    onClick={() => router.push(`/chat/support/${item.id}`)}
                     className={`w-full rounded-xl border p-4 text-left transition-colors ${
                       item.id === selectedId
                         ? "border-secondary bg-secondary text-white"

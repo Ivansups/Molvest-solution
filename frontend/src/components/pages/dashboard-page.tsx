@@ -5,7 +5,6 @@ import {
   Files,
   ShieldCheck,
 } from "lucide-react";
-import { useQueries } from "@tanstack/react-query";
 import { StatsCard } from "@/src/components/common/stats-card";
 import { Badge } from "@/src/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
@@ -17,48 +16,28 @@ import {
   TableHeader,
   TableRow,
 } from "@/src/components/ui/table";
-import { Spinner } from "@/src/components/ui/spinner";
 import { formatDateTime } from "@/src/lib/format";
-import { documentService } from "@/src/services/document-service";
-import { healthService } from "@/src/services/health-service";
+import type { ServerResult } from "@/src/lib/server-api";
+import type { DocumentListOut } from "@/src/types/api";
 
-export function DashboardPage() {
-  const [healthQuery, documentsQuery] = useQueries({
-    queries: [
-      {
-        queryKey: ["health"],
-        queryFn: () => healthService.getHealth(),
-      },
-      {
-        queryKey: ["documents", "dashboard"],
-        queryFn: () =>
-          documentService.listDocuments({
-            page: 1,
-            pageSize: 20,
-            search: "",
-            type: "all",
-          }),
-      },
-    ],
-  });
-
-  if (healthQuery.isLoading || documentsQuery.isLoading) {
-    return (
-      <div className="flex h-80 items-center justify-center">
-        <Spinner className="h-6 w-6" />
-      </div>
-    );
-  }
-
-  const documents = documentsQuery.data?.items ?? [];
-  const indexedCount = documents.filter((item) => item.status === "INDEXED").length;
-  const pendingCount = documents.filter((item) => item.status === "PENDING").length;
-  const failedCount = documents.filter((item) => item.status === "FAILED").length;
-  const [latestUpload] = [...documents].sort(
+export function DashboardPage({
+  health,
+  documents,
+}: {
+  health: ServerResult<{ status: string }>;
+  documents: ServerResult<DocumentListOut>;
+}) {
+  const items = documents.ok ? documents.data.items : [];
+  const total = documents.ok ? documents.data.total : items.length;
+  const indexedCount = items.filter((item) => item.status === "INDEXED").length;
+  const pendingCount = items.filter((item) => item.status === "PENDING").length;
+  const failedCount = items.filter((item) => item.status === "FAILED").length;
+  const [latestUpload] = [...items].sort(
     (left, right) =>
       new Date(right.uploaded_at).getTime() - new Date(left.uploaded_at).getTime(),
   );
   const lastUpload = latestUpload?.uploaded_at ?? null;
+  const healthOk = health.ok && health.data.status === "ok";
 
   return (
     <div className="space-y-6">
@@ -72,13 +51,13 @@ export function DashboardPage() {
         <StatsCard
           icon={ShieldCheck}
           label="Статус API"
-          value={healthQuery.data?.status === "ok" ? "ONLINE" : "OFFLINE"}
-          hint={healthQuery.error ? "Backend недоступен" : "Проверка через /health"}
+          value={healthOk ? "ONLINE" : "OFFLINE"}
+          hint={health.ok ? "Проверка через /health" : "Backend недоступен"}
         />
         <StatsCard
           icon={Files}
           label="Документы"
-          value={String(documentsQuery.data?.total ?? documents.length)}
+          value={String(total)}
           hint="Всего записей в базе знаний"
         />
         <StatsCard
@@ -100,11 +79,9 @@ export function DashboardPage() {
             <CardTitle>Документы базы знаний</CardTitle>
           </CardHeader>
           <CardContent>
-            {documentsQuery.error ? (
+            {!documents.ok ? (
               <div className="rounded-[22px] border border-border/70 bg-slate-50/80 p-4 text-sm leading-6 text-slate-500">
-                {documentsQuery.error instanceof Error
-                  ? documentsQuery.error.message
-                  : "Не удалось загрузить список документов."}
+                {documents.message}
               </div>
             ) : (
               <Table>
@@ -117,7 +94,7 @@ export function DashboardPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {documents.map((item) => (
+                  {items.map((item) => (
                     <TableRow key={item.id}>
                       <TableCell>{item.title}</TableCell>
                       <TableCell>{item.file_type}</TableCell>
@@ -147,12 +124,12 @@ export function DashboardPage() {
                 </div>
                 <Badge
                   className={
-                    healthQuery.data?.status === "ok"
+                    healthOk
                       ? "border-primary/20 bg-primary/10 text-primary"
                       : "border-destructive/20 bg-destructive/10 text-destructive"
                   }
                 >
-                  {healthQuery.data?.status ?? "offline"}
+                  {health.ok ? health.data.status : "offline"}
                 </Badge>
               </div>
             </div>
@@ -202,16 +179,14 @@ export function DashboardPage() {
           </CardContent>
         </Card>
       </div>
-      {healthQuery.error ? (
+      {!health.ok ? (
         <Card>
           <CardHeader>
             <CardTitle>Статус подключения</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="rounded-[22px] border border-destructive/20 bg-destructive/5 p-4 text-sm leading-6 text-foreground">
-              {healthQuery.error instanceof Error
-                ? healthQuery.error.message
-                : "Backend недоступен."}
+              {health.message}
             </div>
           </CardContent>
         </Card>
