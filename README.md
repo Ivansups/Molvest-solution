@@ -84,7 +84,7 @@ make install        # uv sync + pnpm install
 | `INTERNAL_SERVICE_TOKEN` | нет | Next.js → FastAPI, позже |
 | `SESSION_SECRET` | да для входа в UI | HMAC cookie-сессии; шаблон уже заполнен |
 | `API_INTERNAL_URL` | нет | в Compose у `web` всегда `http://api:8000` |
-| `NEXTAUTH_SECRET`, `NEXTAUTH_URL` | нет | запасной секрет сессии / URL |
+| `NEXTAUTH_SECRET` | нет | запасной секрет сессии |
 
 > [!WARNING]
 > В `.env` хост БД — `db`. Так и должно быть для контейнера API.

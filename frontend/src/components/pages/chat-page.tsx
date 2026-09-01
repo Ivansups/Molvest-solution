@@ -62,7 +62,6 @@ export function ChatPage({
   const ticketId = params.ticketId;
   const router = useRouter();
   const queryClient = useQueryClient();
-  const currentUser = user;
   const { toast } = useToast();
   const [draft, setDraft] = useState("");
   const [guestConversationId, setGuestConversationId] = useState<string | null>(null);
@@ -105,8 +104,7 @@ export function ChatPage({
       }
 
       const guestUserId = `guest-${guestConversationId ?? "session"}`;
-      const workspaceId =
-        currentUser?.installationId ?? "guest-workspace-molvest";
+      const workspaceId = user?.installationId ?? "guest-workspace-molvest";
 
       return chatService.sendMessage(
         {
@@ -115,7 +113,7 @@ export function ChatPage({
           conversation_id: selectedId,
           text: draft.trim() || null,
           image_base64: pendingImage?.base64.split(",")[1] ?? null,
-          user_id: currentUser?.id ?? guestUserId,
+          user_id: user?.id ?? guestUserId,
         },
       );
     },

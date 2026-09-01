@@ -1,7 +1,7 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useLayoutEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { setClientSession } from "@/src/lib/client-session";
 import { ToastProvider } from "@/src/store/toast-context";
 import type { UserSession } from "@/src/types/domain";
@@ -26,9 +26,6 @@ export function Providers({
   );
 
   setClientSession(user);
-  useLayoutEffect(() => {
-    setClientSession(user);
-  }, [user]);
 
   return (
     <QueryClientProvider client={queryClient}>

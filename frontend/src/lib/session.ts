@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { cookies } from "next/headers";
 import type { UserSession } from "@/src/types/domain";
 import { SESSION_COOKIE } from "@/src/lib/user-session";
@@ -30,10 +31,10 @@ function cookieBase() {
   };
 }
 
-export async function getSession(): Promise<UserSession | null> {
+export const getSession = cache(async (): Promise<UserSession | null> => {
   const store = await cookies();
   return decodeSessionToken(store.get(SESSION_COOKIE)?.value, sessionSecret());
-}
+});
 
 export async function setSession(
   user: UserSession,

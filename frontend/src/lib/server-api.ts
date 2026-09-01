@@ -1,11 +1,5 @@
 import type { DocumentListOut } from "@/src/types/api";
-
-function apiBase(): string {
-  return (process.env.API_INTERNAL_URL ?? "http://127.0.0.1:8000").replace(
-    /\/$/,
-    "",
-  );
-}
+import { getApiBaseUrl } from "@/src/lib/api-base";
 
 export type ServerResult<T> =
   | { ok: true; data: T }
@@ -16,7 +10,9 @@ export async function serverFetchJson<T>(
   fallback: string,
 ): Promise<ServerResult<T>> {
   try {
-    const response = await fetch(`${apiBase()}${path}`, { cache: "no-store" });
+    const response = await fetch(`${getApiBaseUrl()}${path}`, {
+      cache: "no-store",
+    });
     if (!response.ok) {
       return { ok: false, message: fallback };
     }

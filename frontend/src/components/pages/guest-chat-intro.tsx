@@ -1,26 +1,9 @@
 import { Bot, Database, SearchCheck, Sparkles } from "lucide-react";
 import Link from "next/link";
+import { InfoPill } from "@/src/components/common/info-pill";
 import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent } from "@/src/components/ui/card";
-
-function InfoPill({
-  title,
-  text,
-  icon: Icon,
-}: {
-  title: string;
-  text: string;
-  icon: typeof Database;
-}) {
-  return (
-    <div className="rounded-[24px] border border-white/10 bg-[#0d2448]/58 p-4 backdrop-blur">
-      <Icon className="h-5 w-5 text-white" />
-      <p className="mt-4 text-sm font-medium text-white">{title}</p>
-      <p className="mt-1 text-sm leading-6 text-white/70">{text}</p>
-    </div>
-  );
-}
 
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (

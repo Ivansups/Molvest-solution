@@ -1,5 +1,6 @@
 import { LockKeyhole, ShieldCheck, Sparkles } from "lucide-react";
 import { redirect } from "next/navigation";
+import { InfoPill } from "@/src/components/common/info-pill";
 import { PublicPortalHeader } from "@/src/components/common/public-portal-header";
 import { LoginForm } from "@/src/components/pages/login-form";
 import { getSession } from "@/src/lib/session";
@@ -30,29 +31,21 @@ export default async function LoginRoute() {
                 </p>
               </div>
               <div className="grid gap-3 md:grid-cols-3">
-                <div className="rounded-[24px] border border-white/10 bg-[#0d2448]/58 p-4 backdrop-blur">
-                  <ShieldCheck className="h-5 w-5 text-white" />
-                  <p className="mt-4 text-sm font-medium text-white">
-                    Защищённый доступ
-                  </p>
-                  <p className="mt-1 text-sm leading-6 text-white/70">
-                    Только учётные записи поддержки
-                  </p>
-                </div>
-                <div className="rounded-[24px] border border-white/10 bg-[#0d2448]/58 p-4 backdrop-blur">
-                  <Sparkles className="h-5 w-5 text-white" />
-                  <p className="mt-4 text-sm font-medium text-white">RAG + Vision</p>
-                  <p className="mt-1 text-sm leading-6 text-white/70">
-                    Ответы и анализ скриншотов 1С
-                  </p>
-                </div>
-                <div className="rounded-[24px] border border-white/10 bg-[#0d2448]/58 p-4 backdrop-blur">
-                  <LockKeyhole className="h-5 w-5 text-white" />
-                  <p className="mt-4 text-sm font-medium text-white">Единый контур</p>
-                  <p className="mt-1 text-sm leading-6 text-white/70">
-                    Чаты, документы, аналитика
-                  </p>
-                </div>
+                <InfoPill
+                  icon={ShieldCheck}
+                  title="Защищённый доступ"
+                  text="Только учётные записи поддержки"
+                />
+                <InfoPill
+                  icon={Sparkles}
+                  title="RAG + Vision"
+                  text="Ответы и анализ скриншотов 1С"
+                />
+                <InfoPill
+                  icon={LockKeyhole}
+                  title="Единый контур"
+                  text="Чаты, документы, аналитика"
+                />
               </div>
             </div>
           </section>
