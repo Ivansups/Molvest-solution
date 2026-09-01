@@ -1,6 +1,3 @@
-# Molvest AI-Agent — команды запуска и проверки.
-# `make` без аргументов печатает справку.
-
 .DEFAULT_GOAL := help
 
 COMPOSE       ?= docker compose
@@ -8,8 +5,6 @@ API_URL       ?= http://localhost:8000
 WEB_URL       ?= http://localhost:3000
 SERVER_DIR    := server
 FRONTEND_DIR  := frontend
-
-# В Docker хост БД — сервис `db`. На машине — localhost.
 LOCAL_DATABASE_URL ?= postgresql+asyncpg://postgres:postgres@localhost:5432/molvest
 
 .PHONY: help env setup \
@@ -24,11 +19,7 @@ LOCAL_DATABASE_URL ?= postgresql+asyncpg://postgres:postgres@localhost:5432/molv
 help: ## Показать доступные команды
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make <target>\n\n"} \
 		/^[a-zA-Z0-9_-]+:.*##/ { printf "  %-18s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
-	@printf "\nQuick start:\n  make setup      # .env + Docker API + Postgres + UI\n\n"
-
-# ---------------------------------------------------------------------------
-# Первичная настройка
-# ---------------------------------------------------------------------------
+	@printf "\nQuick start:\n  make setup\n\n"
 
 env: ## Создать .env из шаблона, если файла ещё нет
 	@if [ ! -f .env ]; then \
@@ -47,15 +38,11 @@ install-frontend: ## Поставить JS-зависимости (pnpm)
 
 install: install-server install-frontend ## Поставить зависимости backend и frontend
 
-setup: env up ## Полный первый запуск: .env, Docker (API + UI), проверка /health
+setup: up ## Полный первый запуск: .env, Docker (API + UI), проверка /health
 	@echo ""
 	@echo "API:     $(API_URL)/health"
 	@echo "Docs:    $(API_URL)/docs"
 	@echo "UI:      $(WEB_URL)"
-
-# ---------------------------------------------------------------------------
-# Docker (API + Postgres + UI)
-# ---------------------------------------------------------------------------
 
 up: env ## Собрать и поднять API + Postgres + UI, дождаться /health и :3000
 	$(COMPOSE) up -d --build
@@ -79,7 +66,6 @@ db: env ## Поднять только Postgres (для локального uvi
 migrate: env ## Повторно применить миграции в уже запущенном API
 	$(COMPOSE) exec -T api alembic upgrade head
 
-# $(call wait-http,NAME,URL,TIMEOUT)
 define wait-http
 	echo "Waiting for $(1) at $(2) ..."; \
 	i=0; \
@@ -93,8 +79,8 @@ define wait-http
 	done
 endef
 
-health-api: ## Дождаться ответа API /health (до 90 с)
-	@$(call wait-http,API,$(API_URL)/health,90)
+health-api: ## Дождаться ответа API /health (до 180 с)
+	@$(call wait-http,API,$(API_URL)/health,180)
 	@curl -s "$(API_URL)/health" && echo
 
 health-web: ## Дождаться UI :3000 и прокси /backend/health (до 240 с)
@@ -104,24 +90,15 @@ health-web: ## Дождаться UI :3000 и прокси /backend/health (до
 
 health: health-api health-web ## Дождаться API /health и UI :3000
 
-# ---------------------------------------------------------------------------
-# Локальная разработка (без контейнера API)
-# ---------------------------------------------------------------------------
-
 api: ## Локальный uvicorn с hot-reload (БД: make db). Сначала миграции.
 	cd $(SERVER_DIR) && \
-		DATABASE_URL="$(LOCAL_DATABASE_URL)" \
+		export DATABASE_URL="$(LOCAL_DATABASE_URL)" && \
 		uv run alembic upgrade head && \
-		DATABASE_URL="$(LOCAL_DATABASE_URL)" \
 		uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 frontend: env ## Next.js в Docker на :3000 (не pnpm dev на хосте)
 	$(COMPOSE) up -d --build web
 	@$(MAKE) health-web
-
-# ---------------------------------------------------------------------------
-# Проверки
-# ---------------------------------------------------------------------------
 
 test-server: ## Тесты backend (pytest)
 	cd $(SERVER_DIR) && uv run pytest

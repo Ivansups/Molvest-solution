@@ -1,5 +1,4 @@
 #!/bin/sh
-# Bind-mount ./frontend перекрывает образ. Том node_modules хранит linux-зависимости.
 set -eu
 
 if [ ! -f node_modules/next/dist/bin/next ]; then

@@ -56,7 +56,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
-      start_period: 40s
+      start_period: 180s
 
   web:
     build:
@@ -89,7 +89,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 18
-      start_period: 60s
+      start_period: 180s
 
 volumes:
   db_data:
