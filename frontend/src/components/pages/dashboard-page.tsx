@@ -1,0 +1,221 @@
+import {
+  CheckCircle2,
+  Clock3,
+  FileClock,
+  Files,
+  ShieldCheck,
+} from "lucide-react";
+import { useQueries } from "@tanstack/react-query";
+import { StatsCard } from "@/src/components/common/stats-card";
+import { Badge } from "@/src/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/src/components/ui/table";
+import { Spinner } from "@/src/components/ui/spinner";
+import { formatDateTime } from "@/src/lib/format";
+import { documentService } from "@/src/services/document-service";
+import { healthService } from "@/src/services/health-service";
+
+export function DashboardPage() {
+  const [healthQuery, documentsQuery] = useQueries({
+    queries: [
+      {
+        queryKey: ["health"],
+        queryFn: () => healthService.getHealth(),
+      },
+      {
+        queryKey: ["documents", "dashboard"],
+        queryFn: () =>
+          documentService.listDocuments({
+            page: 1,
+            pageSize: 20,
+            search: "",
+            type: "all",
+          }),
+      },
+    ],
+  });
+
+  if (healthQuery.isLoading || documentsQuery.isLoading) {
+    return (
+      <div className="flex h-80 items-center justify-center">
+        <Spinner className="h-6 w-6" />
+      </div>
+    );
+  }
+
+  const documents = documentsQuery.data?.items ?? [];
+  const indexedCount = documents.filter((item) => item.status === "INDEXED").length;
+  const pendingCount = documents.filter((item) => item.status === "PENDING").length;
+  const failedCount = documents.filter((item) => item.status === "FAILED").length;
+  const [latestUpload] = [...documents].sort(
+    (left, right) =>
+      new Date(right.uploaded_at).getTime() - new Date(left.uploaded_at).getTime(),
+  );
+  const lastUpload = latestUpload?.uploaded_at ?? null;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-semibold text-secondary">Дашборд</h1>
+        <p className="mt-2 text-slate-500">
+          Базовый operational overview по тем backend-функциям, которые уже реально опубликованы.
+        </p>
+      </div>
+      <div className="grid gap-4 xl:grid-cols-4">
+        <StatsCard
+          icon={ShieldCheck}
+          label="Статус API"
+          value={healthQuery.data?.status === "ok" ? "ONLINE" : "OFFLINE"}
+          hint={healthQuery.error ? "Backend недоступен" : "Проверка через /health"}
+        />
+        <StatsCard
+          icon={Files}
+          label="Документы"
+          value={String(documentsQuery.data?.total ?? documents.length)}
+          hint="Всего записей в базе знаний"
+        />
+        <StatsCard
+          icon={CheckCircle2}
+          label="Индексировано"
+          value={String(indexedCount)}
+          hint="Документы со статусом INDEXED"
+        />
+        <StatsCard
+          icon={FileClock}
+          label="Ожидают / failed"
+          value={`${pendingCount} / ${failedCount}`}
+          hint="Статусы PENDING и FAILED"
+        />
+      </div>
+      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Документы базы знаний</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {documentsQuery.error ? (
+              <div className="rounded-[22px] border border-border/70 bg-slate-50/80 p-4 text-sm leading-6 text-slate-500">
+                {documentsQuery.error instanceof Error
+                  ? documentsQuery.error.message
+                  : "Не удалось загрузить список документов."}
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Название</TableHead>
+                    <TableHead>Тип</TableHead>
+                    <TableHead>Статус</TableHead>
+                    <TableHead>Загружен</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {documents.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell>{item.title}</TableCell>
+                      <TableCell>{item.file_type}</TableCell>
+                      <TableCell>
+                        <Badge>{item.status}</Badge>
+                      </TableCell>
+                      <TableCell>{formatDateTime(item.uploaded_at)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Контур backend</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-[22px] border border-border/70 bg-slate-50/80 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-secondary">`GET /health`</p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Проверка доступности FastAPI
+                  </p>
+                </div>
+                <Badge
+                  className={
+                    healthQuery.data?.status === "ok"
+                      ? "border-primary/20 bg-primary/10 text-primary"
+                      : "border-destructive/20 bg-destructive/10 text-destructive"
+                  }
+                >
+                  {healthQuery.data?.status ?? "offline"}
+                </Badge>
+              </div>
+            </div>
+            <div className="rounded-[22px] border border-border/70 bg-slate-50/80 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-secondary">`POST /chat`</p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Работает через гостевой чат и тестовые обращения
+                  </p>
+                </div>
+                <Badge className="border-primary/20 bg-primary/10 text-primary">
+                  connected
+                </Badge>
+              </div>
+            </div>
+            <div className="rounded-[22px] border border-border/70 bg-slate-50/80 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-secondary">Последняя загрузка</p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {lastUpload ? formatDateTime(lastUpload) : "Документы ещё не загружались"}
+                  </p>
+                </div>
+                <Clock3 className="h-4 w-4 text-slate-400" />
+              </div>
+            </div>
+            <div className="rounded-[22px] border border-border/70 bg-slate-50/80 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-secondary">Ошибки загрузки</p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Документы со статусом FAILED требуют повторной проверки
+                  </p>
+                </div>
+                <Badge
+                  className={
+                    failedCount > 0
+                      ? "border-warning/30 bg-warning/10 text-warning"
+                      : "border-primary/20 bg-primary/10 text-primary"
+                  }
+                >
+                  {failedCount}
+                </Badge>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+      {healthQuery.error ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Статус подключения</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-[22px] border border-destructive/20 bg-destructive/5 p-4 text-sm leading-6 text-foreground">
+              {healthQuery.error instanceof Error
+                ? healthQuery.error.message
+                : "Backend недоступен."}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+    </div>
+  );
+}
