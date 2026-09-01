@@ -4,3 +4,15 @@ allowBuilds:
   prisma: set this to true or false
   sharp: false
   unrs-resolver: false
+
+supportedArchitectures:
+  os:
+    - current
+    - linux
+  cpu:
+    - current
+    - arm64
+    - x64
+  libc:
+    - current
+    - glibc

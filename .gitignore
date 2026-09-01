@@ -1,6 +1,10 @@
+# secrets
 .env
+.env.*
+!.env.example
+
+# python
 .venv
-server/data/uploads/
 .venv/
 venv
 venv/
@@ -9,5 +13,23 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+htmlcov/
+.tox/
+*.egg-info/
+
+# node / next
 node_modules/
 .next/
+.turbo/
+.pnpm-store/
+*.tsbuildinfo
+.pnpm-debug.log*
+
+# uploads written by the API container
+server/data/uploads/
+
+# logs & OS
+*.log
+.DS_Store
+Thumbs.db

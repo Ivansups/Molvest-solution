@@ -12,9 +12,9 @@ AI-агент техподдержки 1С для АО «Молвест»: от�
 | --- | --- | --- |
 | API | FastAPI, Python 3.12, uv | Docker (`make up`) или локально (`make api`) |
 | БД | PostgreSQL 16 + pgvector | Docker (`make up` или `make db`) |
-| UI | Next.js 16, pnpm | Только локально (`make frontend`) — в Compose нет |
+| UI | Next.js 16, pnpm | Docker (`make up` / `make frontend`) |
 
-`make up` поднимает Postgres и API и **обязательно** применяет миграции Alembic до того, как API начнёт отвечать. Фронтенд в Compose нет — после `make up` отдельно `make frontend`.
+`make up` поднимает Postgres, API и Next.js и **обязательно** применяет миграции Alembic до того, как API начнёт отвечать. UI доступен на http://localhost:3000.
 
 ## Быстрый старт
 
@@ -25,8 +25,7 @@ AI-агент техподдержки 1С для АО «Молвест»: от�
 ```bash
 git clone <repo-url>
 cd Molvest-solution
-make setup          # создаёт .env, поднимает API + Postgres, ждёт /health
-make frontend       # http://localhost:3000
+make setup          # создаёт .env, поднимает API + Postgres + UI, ждёт готовности
 ```
 
 Проверка API:
@@ -51,8 +50,9 @@ make frontend       # http://localhost:3000
 
 ## Требования для локальной разработки
 
-Если API крутите в Docker, Python и Node на машине не обязательны.
-Они нужны для `make api`, `make frontend`, тестов и линтеров.
+Если API и UI крутите в Docker, Python и Node на машине не обязательны:
+зависимости UI ставятся внутри контейнера. Node/pnpm нужны для
+`make lint-frontend`, `make test-frontend` и `make api` на хосте.
 
 | Инструмент | Версия | Зачем | Установка |
 | --- | --- | --- | --- |
@@ -82,7 +82,9 @@ make install        # uv sync + pnpm install
 | `CONFIDENCE_THRESHOLD` | нет | порог эскалации, по умолчанию `0.8` |
 | `TOP_K`, `MAX_CHUNK_SIZE` | нет | RAG, пока не задействованы |
 | `INTERNAL_SERVICE_TOKEN` | нет | Next.js → FastAPI, позже |
-| `NEXTAUTH_SECRET`, `NEXTAUTH_URL` | нет | логин админки, позже |
+| `SESSION_SECRET` | да для входа в UI | HMAC cookie-сессии; шаблон уже заполнен |
+| `API_INTERNAL_URL` | нет | в Compose у `web` всегда `http://api:8000` |
+| `NEXTAUTH_SECRET` | нет | запасной секрет сессии |
 
 > [!WARNING]
 > В `.env` хост БД — `db`. Так и должно быть для контейнера API.
@@ -95,23 +97,23 @@ make install        # uv sync + pnpm install
 
 | Команда | Что делает |
 | --- | --- |
-| `make setup` | `.env` + сборка/запуск Docker + ожидание `/health` |
+| `make setup` | `.env` + сборка/запуск Docker (API + UI) + ожидание готовности |
 | `make env` | копирует `.env.example` → `.env`, если файла нет |
-| `make up` | Postgres + API, миграции, ожидание `/health` |
+| `make up` | Postgres + API + UI, миграции, ожидание `/health` и `:3000` |
 | `make down` | остановить контейнеры (данные БД остаются) |
 | `make restart` | перезапуск контейнеров |
-| `make logs` | логи API и Postgres |
+| `make logs` | логи API, UI и Postgres |
 | `make ps` | статус контейнеров |
-| `make health` | ждать `GET /health` до 90 с |
+| `make health` | ждать API `/health`, UI `:3000` и `/backend/health` |
 | `make db` | только Postgres (для `make api`) |
 | `make migrate` | повторный `alembic upgrade head` в уже запущенном API |
 | `make api` | uvicorn на машине, `:8000`, hot-reload |
-| `make frontend` | `pnpm install` + Next.js на `:3000` |
-| `make install` | зависимости backend и frontend |
-| `make test` | pytest |
+| `make frontend` | Next.js в Docker на `:3000` |
+| `make install` | зависимости backend и frontend на хосте (для линтеров) |
+| `make test` | pytest + vitest (vitest — на хосте, нужен pnpm) |
 | `make lint` | ruff + mypy + eslint + tsc |
 | `make fmt` | автоформат Python |
-| `make clean` | `compose down -v` — **удаляет том Postgres** |
+| `make clean` | `compose down -v` — **удаляет тома Postgres, Redis и UI** |
 
 Миграции гоняет entrypoint контейнера API перед uvicorn. `make up` не завершится, пока `/health` не ответит (схема уже на месте). `make migrate` нужен, только если применили новую ревизию без перезапуска контейнера.
 
@@ -121,7 +123,7 @@ make install        # uv sync + pnpm install
 
 ```bash
 make setup
-# правки в server/ подхватываются (--reload + volume ./server)
+# правки в server/ и frontend/ подхватываются (volume + reload)
 make logs          # если что-то не поднялось
 ```
 
@@ -214,12 +216,9 @@ Uvicorn читает `DATABASE_URL` с хостом `db` из `.env`. Запус
 cp .env.example .env
 docker compose up -d --build   # API сам сделает alembic upgrade head
 curl -s http://localhost:8000/health
+# UI: http://localhost:3000
 
-# фронтенд
-pnpm --dir frontend install
-pnpm --dir frontend dev
-
-# локальный backend
+# локальный backend (UI всё равно в Docker: docker compose up -d web)
 docker compose up -d db
 cd server
 uv sync --all-groups
