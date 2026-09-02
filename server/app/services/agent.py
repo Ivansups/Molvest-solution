@@ -1,18 +1,24 @@
-"""Запуск диалогового графа для одного сообщения чата."""
+"""Запуск диалогового графа для одного сообщения чата с персистом диалога."""
 
 import logging
-from uuid import UUID, uuid4
+from uuid import UUID
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.graph import get_graph
 from app.agent.state import AgentState, RetrievedChunk
 from app.rag.retrieval import workspace_to_installation_id
 from app.schemas.chat import ChatRequest, ChatResponse, Source
+from app.services.conversations import GUEST_ESCALATION_TEXT, persist_turn
 
 logger = logging.getLogger(__name__)
 
 
-async def run_chat_turn(request: ChatRequest) -> ChatResponse:
-    """Прогоняет запрос через LangGraph и мапит состояние в контракт /chat."""
+async def run_chat_turn(
+    request: ChatRequest,
+    session: AsyncSession,
+) -> ChatResponse:
+    """Прогоняет запрос через LangGraph, пишет диалог и мапит в контракт."""
     installation_id = workspace_to_installation_id(request.workspace_id)
     logger.info(
         "граф старт message_id=%s installation_id=%s",
@@ -27,13 +33,33 @@ async def run_chat_turn(request: ChatRequest) -> ChatResponse:
         final.get("escalated"),
         final.get("confidence"),
     )
+
+    sources = _to_sources(final.get("chunks") or [])
+    escalated = bool(final.get("escalated", False))
+    confidence = float(final.get("confidence", 0.0))
+    answer = final.get("answer") or ""
+    text = GUEST_ESCALATION_TEXT if escalated else answer
+
+    persisted = await persist_turn(
+        session,
+        conversation_id=request.conversation_id,
+        installation_id=installation_id,
+        user_id=request.user_id,
+        user_text=request.text,
+        user_image=request.image_base64,
+        assistant_content=text,
+        confidence=confidence,
+        escalated=escalated,
+        sources=sources,
+    )
+
     return ChatResponse(
-        conversation_id=request.conversation_id or uuid4(),
+        conversation_id=persisted.conversation.id,
         message_id=request.message_id,
-        text=final.get("answer") or "",
-        confidence=final.get("confidence", 0.0),
-        escalated=final.get("escalated", False),
-        sources=_to_sources(final.get("chunks") or []),
+        text=text,
+        confidence=confidence,
+        escalated=escalated,
+        sources=sources,
     )
 
 

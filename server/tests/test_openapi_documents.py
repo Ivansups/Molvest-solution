@@ -1,11 +1,11 @@
-"""Маршруты документов есть в OpenAPI; чат и диалоги не сломаны."""
+"""Маршруты документов, чата, диалогов и метрик есть в OpenAPI."""
 
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
 
 
-async def test_openapi_documents_and_unchanged_chat() -> None:
+async def test_openapi_has_documents_chat_conversations_metrics() -> None:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         spec = (await client.get("/openapi.json")).json()
@@ -17,4 +17,8 @@ async def test_openapi_documents_and_unchanged_chat() -> None:
     assert "/api/documents/{document_id}/reindex" in paths
     assert "/chat" in paths
     assert "post" in paths["/chat"]
-    assert not any(path.startswith("/api/conversations") for path in paths)
+    assert "/api/conversations" in paths
+    assert "get" in paths["/api/conversations"]
+    assert "/api/conversations/{conversation_id}" in paths
+    assert "/api/metrics" in paths
+    assert "get" in paths["/api/metrics"]

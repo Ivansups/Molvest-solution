@@ -7,8 +7,10 @@ from uuid import uuid4
 from fastapi import FastAPI, Request, Response
 
 from app.api.chat import router as chat_router
+from app.api.conversations import router as conversations_router
 from app.api.documents import router as documents_router
 from app.api.health import router as health_router
+from app.api.metrics import router as metrics_router
 from app.core.logging import request_id_var, setup_logging
 
 setup_logging()
@@ -20,6 +22,8 @@ app = FastAPI(title="Molvest AI-Agent API")
 app.include_router(health_router)
 app.include_router(chat_router)
 app.include_router(documents_router)
+app.include_router(conversations_router)
+app.include_router(metrics_router)
 
 _SKIP_ACCESS_LOG = frozenset({"/health", "/docs", "/openapi.json", "/redoc"})
 

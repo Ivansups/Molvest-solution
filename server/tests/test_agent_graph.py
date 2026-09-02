@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.graph import build_graph
 from app.agent.nodes.classify import _EMPTY_REPLY, classify
@@ -134,14 +135,21 @@ async def test_classify_rules() -> None:
     assert empty["answer"] == _EMPTY_REPLY
 
 
-async def test_run_chat_turn_maps_contract(
+async def test_run_chat_turn_maps_contract_and_persists(
     monkeypatch: pytest.MonkeyPatch,
     chat_request: ChatRequest,
     llm_mock: MagicMock,
     app_settings: Settings,
     reset_graph_singleton: None,
+    db_session: AsyncSession,
 ) -> None:
+    from sqlalchemy import select
+
     import app.services.agent as agent_service
+    from app.models.conversation import Conversation
+    from app.models.enums import ConversationStatus, MessageRole
+    from app.models.escalation import Escalation
+    from app.models.message import Message
 
     async def fake_retriever(state: AgentState) -> list[RetrievedChunk]:
         return []
@@ -149,9 +157,73 @@ async def test_run_chat_turn_maps_contract(
     graph = build_graph(llm_mock, app_settings, retriever=fake_retriever)
     monkeypatch.setattr(agent_service, "get_graph", lambda: graph)
 
-    response = await run_chat_turn(chat_request)
+    response = await run_chat_turn(chat_request, db_session)
     assert response.message_id == chat_request.message_id
     assert response.escalated is True
     assert response.confidence == 0.0
     assert response.sources == []
     assert isinstance(response.conversation_id, UUID)
+    # гость получает непустой текст про передачу оператору
+    assert response.text and "оператор" in response.text
+
+    conversation = await db_session.get(Conversation, response.conversation_id)
+    assert conversation is not None
+    assert conversation.status == ConversationStatus.ESCALATED
+
+    messages = list(
+        (
+            await db_session.scalars(
+                select(Message).where(Message.conversation_id == conversation.id)
+            )
+        ).all()
+    )
+    roles = {m.role for m in messages}
+    assert MessageRole.USER in roles
+    assert MessageRole.SYSTEM in roles
+
+    escalation = (
+        await db_session.scalars(
+            select(Escalation).where(Escalation.conversation_id == conversation.id)
+        )
+    ).first()
+    assert escalation is not None
+    assert escalation.escalated_to
+
+
+async def test_run_chat_turn_replay_does_not_double_escalate(
+    monkeypatch: pytest.MonkeyPatch,
+    chat_request: ChatRequest,
+    llm_mock: MagicMock,
+    app_settings: Settings,
+    reset_graph_singleton: None,
+    db_session: AsyncSession,
+) -> None:
+    from sqlalchemy import func, select
+
+    import app.services.agent as agent_service
+    from app.models.conversation import Conversation
+    from app.models.enums import ConversationStatus
+    from app.models.escalation import Escalation
+
+    async def fake_retriever(state: AgentState) -> list[RetrievedChunk]:
+        return []
+
+    graph = build_graph(llm_mock, app_settings, retriever=fake_retriever)
+    monkeypatch.setattr(agent_service, "get_graph", lambda: graph)
+
+    first = await run_chat_turn(chat_request, db_session)
+    # повтор того же хода против того же диалога
+    replay_request = chat_request.model_copy(
+        update={"conversation_id": first.conversation_id}
+    )
+    await run_chat_turn(replay_request, db_session)
+
+    conversation = await db_session.get(Conversation, first.conversation_id)
+    assert conversation is not None
+    assert conversation.status == ConversationStatus.ESCALATED
+    count = await db_session.scalar(
+        select(func.count())
+        .select_from(Escalation)
+        .where(Escalation.conversation_id == first.conversation_id)
+    )
+    assert count == 1

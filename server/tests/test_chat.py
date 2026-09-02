@@ -1,16 +1,18 @@
 """Контракт POST /chat после подключения графа."""
 
+from collections.abc import AsyncIterator
 from uuid import UUID
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from app.db.session import get_session
 from app.main import app
 from app.schemas.chat import ChatRequest, ChatResponse
 
 
 async def test_chat_returns_graph_result(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake_run(request: ChatRequest) -> ChatResponse:
+    async def fake_run(request: ChatRequest, session: object) -> ChatResponse:
         return ChatResponse(
             conversation_id=request.conversation_id
             or UUID("22222222-2222-2222-2222-222222222222"),
@@ -21,6 +23,10 @@ async def test_chat_returns_graph_result(monkeypatch: pytest.MonkeyPatch) -> Non
             sources=[],
         )
 
+    async def override_session() -> AsyncIterator[None]:
+        yield None
+
+    app.dependency_overrides[get_session] = override_session
     monkeypatch.setattr("app.api.chat.run_chat_turn", fake_run)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -35,6 +41,7 @@ async def test_chat_returns_graph_result(monkeypatch: pytest.MonkeyPatch) -> Non
                 "user_id": "u1",
             },
         )
+    app.dependency_overrides.clear()
     assert response.status_code == 200
     body = response.json()
     assert body["text"] == "из графа"

@@ -1,19 +1,24 @@
 """Роутер POST /chat — валидация контракта и вызов графа агента."""
 
 import logging
+from typing import Annotated
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import preview
+from app.db.session import get_session
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services.agent import run_chat_turn
 
 router = APIRouter(tags=["chat"])
 logger = logging.getLogger(__name__)
 
+SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
 
 @router.post("/chat")
-async def chat(request: ChatRequest) -> ChatResponse:
+async def chat(request: ChatRequest, session: SessionDep) -> ChatResponse:
     """Принимает сообщение пользователя и прогоняет его через LangGraph."""
     logger.info(
         "вход /chat message_id=%s workspace=%s conversation_id=%s has_image=%s text=%s",
@@ -23,7 +28,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
         bool(request.image_base64),
         preview(request.text or ""),
     )
-    response = await run_chat_turn(request)
+    response = await run_chat_turn(request, session)
     logger.info(
         "выход /chat message_id=%s conversation_id=%s escalated=%s "
         "confidence=%s sources=%s text=%s",
