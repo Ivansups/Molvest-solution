@@ -2,6 +2,7 @@
 
 import { Bell, LogOut, Search, UserCircle2 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { logoutAction } from "@/src/actions/auth";
 import { Avatar, AvatarFallback } from "@/src/components/ui/avatar";
 import { Button } from "@/src/components/ui/button";
@@ -18,6 +19,8 @@ import { ScrollArea } from "@/src/components/ui/scroll-area";
 import type { UserSession } from "@/src/types/domain";
 
 export function AppHeader({ user }: { user: UserSession }) {
+  const router = useRouter();
+
   return (
     <header className="px-4 pt-4 lg:px-8">
       <div className="shell-panel soft-shadow flex items-center gap-4 rounded-[22px] border border-white/70 px-4 py-4">
@@ -88,7 +91,13 @@ export function AppHeader({ user }: { user: UserSession }) {
               {user.email}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => void logoutAction()}>
+            <DropdownMenuItem
+              onClick={async () => {
+                const redirectTo = await logoutAction();
+                router.push(redirectTo);
+                router.refresh();
+              }}
+            >
               <LogOut className="h-4 w-4" />
               Выйти
             </DropdownMenuItem>

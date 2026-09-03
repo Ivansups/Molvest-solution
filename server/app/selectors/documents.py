@@ -39,11 +39,15 @@ async def list_documents(
 async def get_document(
     session: AsyncSession,
     document_id: UUID,
+    installation_id: UUID,
 ) -> Document | None:
-    """Документ с чанками или None, если нет строки."""
+    """Документ с чанками в границах установки или None."""
     stmt = (
         select(Document)
         .options(selectinload(Document.chunks))
-        .where(Document.id == document_id)
+        .where(
+            Document.id == document_id,
+            Document.installation_id == installation_id,
+        )
     )
     return (await session.scalars(stmt)).first()

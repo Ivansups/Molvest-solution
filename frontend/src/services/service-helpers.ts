@@ -1,5 +1,4 @@
 import axios from "axios";
-import { getClientSession } from "@/src/lib/client-session";
 
 export class ApiServiceError extends Error {
   status?: number;
@@ -44,18 +43,4 @@ export function toServiceError(
 
 export function unsupportedEndpoint(endpoint: string, message: string): never {
   throw new ApiServiceError(message, { status: 404, endpoint });
-}
-
-export function getStoredInstallationId(): string {
-  const user = getClientSession();
-  if (!user) {
-    throw new ApiServiceError("Сначала выполните вход в панель поддержки.");
-  }
-
-  return user.installationId;
-}
-
-export async function delay<T>(value: T, timeout = 200): Promise<T> {
-  await new Promise((resolve) => setTimeout(resolve, timeout));
-  return value;
 }

@@ -3,6 +3,8 @@ import { GuestChatIntro } from "@/src/components/pages/guest-chat-intro";
 import { PublicPortalHeader } from "@/src/components/common/public-portal-header";
 import { getSession } from "@/src/lib/session";
 
+export const dynamic = "force-dynamic";
+
 export default async function GuestChatRoute() {
   const user = await getSession();
 

@@ -114,7 +114,10 @@ async def test_valid_token_is_accepted(
 
 
 async def test_http_error_uses_envelope(api_client: AsyncClient) -> None:
-    response = await api_client.get(f"/api/documents/{uuid4()}")
+    response = await api_client.get(
+        f"/api/documents/{uuid4()}",
+        params={"installation_id": str(uuid4())},
+    )
     assert response.status_code == 404
     body = response.json()
     assert body["error"] == "http_error"
@@ -132,7 +135,10 @@ async def test_unhandled_error_hides_stack(
         raise RuntimeError("секретный стек")
 
     monkeypatch.setattr("app.api.documents.document_selectors.get_document", boom)
-    response = await api_client.get(f"/api/documents/{uuid4()}")
+    response = await api_client.get(
+        f"/api/documents/{uuid4()}",
+        params={"installation_id": str(uuid4())},
+    )
     assert response.status_code == 500
     body = response.json()
     assert body["error"] == "internal_error"

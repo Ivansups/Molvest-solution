@@ -5,6 +5,8 @@ import { PublicPortalHeader } from "@/src/components/common/public-portal-header
 import { LoginForm } from "@/src/components/pages/login-form";
 import { getSession } from "@/src/lib/session";
 
+export const dynamic = "force-dynamic";
+
 export default async function LoginRoute() {
   const user = await getSession();
   if (user) {

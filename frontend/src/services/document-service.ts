@@ -1,6 +1,5 @@
-import { apiClient } from "@/src/api/client";
+import { adminApiClient } from "@/src/api/admin-client";
 import {
-  getStoredInstallationId,
   toServiceError,
   unsupportedEndpoint,
 } from "@/src/services/service-helpers";
@@ -14,9 +13,8 @@ export const documentService = {
     type: string;
   }): Promise<DocumentListOut> {
     try {
-      const response = await apiClient.get<DocumentListOut>("/api/documents", {
+      const response = await adminApiClient.get<DocumentListOut>("/documents", {
         params: {
-          installation_id: getStoredInstallationId(),
           page: params.page,
           page_size: params.pageSize,
           file_type: params.type === "all" ? undefined : params.type,
@@ -43,7 +41,9 @@ export const documentService = {
 
   async getDocument(docId: string): Promise<DocumentDetailOut | null> {
     try {
-      const response = await apiClient.get<DocumentDetailOut>(`/api/documents/${docId}`);
+      const response = await adminApiClient.get<DocumentDetailOut>(
+        `/documents/${docId}`,
+      );
       return response.data;
     } catch (error) {
       throw toServiceError(
@@ -68,9 +68,11 @@ export const documentService = {
       const formData = new FormData();
       formData.append("file", payload.file);
       formData.append("title", payload.title);
-      formData.append("installation_id", getStoredInstallationId());
       formData.append("metadata", JSON.stringify(payload.metadata));
-      const response = await apiClient.post<DocumentOut>("/api/documents", formData);
+      const response = await adminApiClient.post<DocumentOut>(
+        "/documents",
+        formData,
+      );
       return response.data;
     } catch (error) {
       throw toServiceError(
@@ -95,7 +97,7 @@ export const documentService = {
 
   async deleteDocument(docId: string): Promise<void> {
     try {
-      await apiClient.delete(`/api/documents/${docId}`);
+      await adminApiClient.delete(`/documents/${docId}`);
     } catch (error) {
       throw toServiceError(
         error,
@@ -107,7 +109,7 @@ export const documentService = {
 
   async reindexDocument(docId: string): Promise<DocumentDetailOut | null> {
     try {
-      await apiClient.post<DocumentOut>(`/api/documents/${docId}/reindex`);
+      await adminApiClient.post<DocumentOut>(`/documents/${docId}/reindex`);
       return await this.getDocument(docId);
     } catch (error) {
       throw toServiceError(

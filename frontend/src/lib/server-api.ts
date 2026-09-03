@@ -1,3 +1,4 @@
+import { fetchAdminApi } from "@/src/lib/admin-api";
 import type { DocumentListOut } from "@/src/types/api";
 import { getApiBaseUrl } from "@/src/lib/api-base";
 import { internalTokenHeaders } from "@/src/lib/internal-token";
@@ -39,10 +40,26 @@ export async function loadDashboard(installationId: string): Promise<{
       "/health",
       "Не удалось получить статус backend /health.",
     ),
-    serverFetchJson<DocumentListOut>(
-      `/api/documents?${query.toString()}`,
-      "Не удалось загрузить список документов.",
-    ),
+    (async () => {
+      try {
+        const response = await fetchAdminApi(`/api/documents?${query.toString()}`);
+        if (!response.ok) {
+          return {
+            ok: false as const,
+            message: "Не удалось загрузить список документов.",
+          };
+        }
+        return {
+          ok: true as const,
+          data: (await response.json()) as DocumentListOut,
+        };
+      } catch {
+        return {
+          ok: false as const,
+          message: "Не удалось загрузить список документов.",
+        };
+      }
+    })(),
   ]);
 
   return { health, documents };

@@ -111,11 +111,12 @@ async def test_list_filter_and_get_has_empty_chunks(api_client: AsyncClient) -> 
     assert body["items"][0]["file_name"] == "one.pdf"
 
     document_id = body["items"][0]["id"]
-    detail = await api_client.get(f"/api/documents/{document_id}")
+    scope = {"installation_id": str(INSTALL_A)}
+    detail = await api_client.get(f"/api/documents/{document_id}", params=scope)
     assert detail.status_code == 200
     assert detail.json()["chunks"] == []
 
-    missing = await api_client.get(f"/api/documents/{uuid4()}")
+    missing = await api_client.get(f"/api/documents/{uuid4()}", params=scope)
     assert missing.status_code == 404
 
 
@@ -130,11 +131,12 @@ async def test_delete_removes_chunks_and_file(
     db_session.add(Chunk(document_id=document_id, content="фрагмент", chunk_index=0))
     await db_session.commit()
 
-    deleted = await api_client.delete(f"/api/documents/{document_id}")
+    scope = {"installation_id": str(INSTALL_A)}
+    deleted = await api_client.delete(f"/api/documents/{document_id}", params=scope)
     assert deleted.status_code == 204
     assert not storage.exists()
 
-    again = await api_client.delete(f"/api/documents/{document_id}")
+    again = await api_client.delete(f"/api/documents/{document_id}", params=scope)
     assert again.status_code == 404
 
 
@@ -146,8 +148,13 @@ async def test_reindex_schedules_background_task(
 
     ran: list[UUID] = []
 
-    async def fake_background(document_id: UUID, request_id: str) -> None:
+    async def fake_background(
+        document_id: UUID,
+        installation_id: UUID,
+        request_id: str,
+    ) -> None:
         assert request_id
+        assert installation_id == INSTALL_A
         ran.append(document_id)
 
     monkeypatch.setattr(documents_api, "_reindex_in_background", fake_background)
@@ -160,7 +167,10 @@ async def test_reindex_schedules_background_task(
     document_id = UUID(str(created["id"]))
     assert ran == [document_id]
 
-    accepted = await api_client.post(f"/api/documents/{document_id}/reindex")
+    accepted = await api_client.post(
+        f"/api/documents/{document_id}/reindex",
+        params={"installation_id": str(INSTALL_A)},
+    )
     assert accepted.status_code == 202
     assert accepted.json()["status"] == DocumentStatus.PENDING
     assert accepted.json()["id"] == str(document_id)
@@ -175,8 +185,13 @@ async def test_upload_starts_background_index(
 
     ran: list[UUID] = []
 
-    async def fake_background(document_id: UUID, request_id: str) -> None:
+    async def fake_background(
+        document_id: UUID,
+        installation_id: UUID,
+        request_id: str,
+    ) -> None:
         assert request_id
+        assert installation_id == INSTALL_A
         ran.append(document_id)
 
     monkeypatch.setattr(documents_api, "_reindex_in_background", fake_background)
@@ -189,5 +204,38 @@ async def test_upload_starts_background_index(
 async def test_reindex_unknown_document_is_404(
     api_client: AsyncClient,
 ) -> None:
-    response = await api_client.post(f"/api/documents/{uuid4()}/reindex")
+    response = await api_client.post(
+        f"/api/documents/{uuid4()}/reindex",
+        params={"installation_id": str(INSTALL_A)},
+    )
     assert response.status_code == 404
+
+
+async def test_installation_scope_hides_foreign_document(
+    api_client: AsyncClient,
+) -> None:
+    code, created = await _upload(api_client, "foreign.pdf", installation_id=INSTALL_A)
+    assert code == 201
+    document_id = str(created["id"])
+    foreign = {"installation_id": str(INSTALL_B)}
+
+    detail = await api_client.get(f"/api/documents/{document_id}", params=foreign)
+    assert detail.status_code == 404
+
+    reindex = await api_client.post(
+        f"/api/documents/{document_id}/reindex",
+        params=foreign,
+    )
+    assert reindex.status_code == 404
+
+    deleted = await api_client.delete(f"/api/documents/{document_id}", params=foreign)
+    assert deleted.status_code == 404
+
+    own = await api_client.get(
+        f"/api/documents/{document_id}",
+        params={"installation_id": str(INSTALL_A)},
+    )
+    assert own.status_code == 200
+
+    unscoped = await api_client.get(f"/api/documents/{document_id}")
+    assert unscoped.status_code == 422

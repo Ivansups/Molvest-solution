@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import { Providers } from "@/app/providers";
-import { getSession } from "@/src/lib/session";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -14,12 +13,10 @@ export default async function RootLayout({
 }: Readonly<{
   children: ReactNode;
 }>) {
-  const user = await getSession();
-
   return (
     <html lang="ru" className="h-full antialiased">
       <body className="min-h-full flex flex-col">
-        <Providers user={user}>{children}</Providers>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

@@ -81,10 +81,10 @@ make install        # uv sync + pnpm install
 | `POSTGRES_USER` / `PASSWORD` / `DB` | да | должны совпадать с URL |
 | `CONFIDENCE_THRESHOLD` | нет | порог эскалации, по умолчанию `0.8` |
 | `TOP_K`, `MAX_CHUNK_SIZE` | нет | RAG, пока не задействованы |
-| `INTERNAL_SERVICE_TOKEN` | нет | Next.js → FastAPI, позже |
-| `SESSION_SECRET` | да для входа в UI | HMAC cookie-сессии; шаблон уже заполнен |
+| `INTERNAL_SERVICE_TOKEN` | нет | Next.js → FastAPI; пусто — backend не проверяет |
 | `API_INTERNAL_URL` | нет | в Compose у `web` всегда `http://api:8000` |
-| `NEXTAUTH_SECRET` | нет | запасной секрет сессии |
+| `AUTH_SECRET` | да для входа в UI | подпись JWT-куки Auth.js; шаблон заполнен |
+| `AUTH_DATABASE_URL` | да для входа в UI | та же БД драйвером Prisma, схема `auth` (домен ведёт Alembic) |
 
 > [!WARNING]
 > В `.env` хост БД — `db`. Так и должно быть для контейнера API.

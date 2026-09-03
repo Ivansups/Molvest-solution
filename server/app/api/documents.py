@@ -128,7 +128,7 @@ async def upload_document_route(
         document.id,
         document.status,
     )
-    _schedule_reindex(background_tasks, document.id)
+    _schedule_reindex(background_tasks, document.id, installation_id)
     return document_to_out(document)
 
 
@@ -136,10 +136,19 @@ async def upload_document_route(
 async def get_document_route(
     session: SessionDep,
     document_id: UUID,
+    installation_id: UUID,
 ) -> DocumentDetailOut:
-    """Карточка документа с чанками."""
-    logger.info("карточка document_id=%s", document_id)
-    document = await document_selectors.get_document(session, document_id)
+    """Карточка документа с чанками в границах установки."""
+    logger.info(
+        "карточка document_id=%s installation_id=%s",
+        document_id,
+        installation_id,
+    )
+    document = await document_selectors.get_document(
+        session,
+        document_id,
+        installation_id,
+    )
     if document is None:
         logger.warning("карточка не найдена document_id=%s", document_id)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Не найден")
@@ -153,11 +162,19 @@ async def get_document_route(
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_document_route(session: SessionDep, document_id: UUID) -> None:
+async def delete_document_route(
+    session: SessionDep,
+    document_id: UUID,
+    installation_id: UUID,
+) -> None:
     """Удаляет документ, чанки и файл на диске."""
-    logger.info("удаление document_id=%s", document_id)
+    logger.info(
+        "удаление document_id=%s installation_id=%s",
+        document_id,
+        installation_id,
+    )
     try:
-        await delete_document(session, document_id)
+        await delete_document(session, document_id, installation_id)
     except DocumentNotFoundError as exc:
         logger.warning("удаление: документ не найден document_id=%s", document_id)
         raise HTTPException(
@@ -172,30 +189,48 @@ async def reindex_document_route(
     session: SessionDep,
     background_tasks: BackgroundTasks,
     document_id: UUID,
+    installation_id: UUID,
 ) -> DocumentOut:
     """Запускает реиндексацию в фоне и сразу возвращает документ."""
-    logger.info("реиндекс принят document_id=%s", document_id)
-    document = await document_selectors.get_document(session, document_id)
+    logger.info(
+        "реиндекс принят document_id=%s installation_id=%s",
+        document_id,
+        installation_id,
+    )
+    document = await document_selectors.get_document(
+        session,
+        document_id,
+        installation_id,
+    )
     if document is None:
         logger.warning("реиндекс: документ не найден document_id=%s", document_id)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Не найден")
     document.status = DocumentStatus.PENDING
     await session.commit()
     await session.refresh(document)
-    _schedule_reindex(background_tasks, document_id)
+    _schedule_reindex(background_tasks, document_id, installation_id)
     logger.info("реиндекс в фоне document_id=%s", document_id)
     return document_to_out(document)
 
 
-def _schedule_reindex(background_tasks: BackgroundTasks, document_id: UUID) -> None:
+def _schedule_reindex(
+    background_tasks: BackgroundTasks,
+    document_id: UUID,
+    installation_id: UUID,
+) -> None:
     background_tasks.add_task(
         _reindex_in_background,
         document_id,
+        installation_id,
         request_id_var.get(),
     )
 
 
-async def _reindex_in_background(document_id: UUID, request_id: str) -> None:
+async def _reindex_in_background(
+    document_id: UUID,
+    installation_id: UUID,
+    request_id: str,
+) -> None:
     """Реиндексирует документ собственной сессией вне цикла запроса."""
     token = request_id_var.set(request_id)
     try:
@@ -205,6 +240,7 @@ async def _reindex_in_background(document_id: UUID, request_id: str) -> None:
                 await reindex_document(
                     session,
                     document_id,
+                    installation_id,
                     llm=get_gigachat_service(),
                 )
             logger.info("фоновая реиндексация готова document_id=%s", document_id)
