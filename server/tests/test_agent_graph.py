@@ -7,7 +7,13 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.graph import build_graph
-from app.agent.nodes.classify import _EMPTY_REPLY, classify
+from app.agent.nodes.classify import (
+    _EMPTY_REPLY,
+    _GREETING_REPLY,
+    _OFF_TOPIC_REPLY,
+    classify,
+)
+from app.agent.nodes.generate import generate
 from app.agent.state import AgentState, RetrievedChunk
 from app.core.config import Settings
 from app.schemas.chat import ChatRequest
@@ -44,15 +50,24 @@ async def test_empty_input_skips_llm(
 async def test_greeting_skips_retrieve(
     llm_mock: MagicMock, app_settings: Settings
 ) -> None:
-    llm_mock.generate = AsyncMock(return_value="Здравствуйте!")
     graph = build_graph(llm_mock, app_settings)
     result = await graph.ainvoke(_state(text="привет"))
     assert result["intent"] == "greeting"
-    assert result["answer"] == "Здравствуйте!"
+    assert result["answer"] == _GREETING_REPLY
     assert result["confidence"] == 1.0
     assert result["escalated"] is False
     assert result["chunks"] == []
-    assert llm_mock.generate.await_count == 1
+    llm_mock.generate.assert_not_called()
+
+
+async def test_off_topic_skips_generate(
+    llm_mock: MagicMock, app_settings: Settings
+) -> None:
+    graph = build_graph(llm_mock, app_settings)
+    result = await graph.ainvoke(_state(text="какая у вас погода"))
+    assert result["intent"] == "off_topic"
+    assert result["answer"] == _OFF_TOPIC_REPLY
+    llm_mock.generate.assert_not_called()
 
 
 async def test_support_retrieves_then_generates(
@@ -129,6 +144,9 @@ async def test_classify_rules() -> None:
     assert (await classify({"query": "привет!"}))["intent"] == "greeting"
     assert (await classify({"query": "спасибо"}))["intent"] == "greeting"
     assert (await classify({"query": "как провести документ"}))["intent"] == "support"
+    assert (await classify({"query": "привет, как провести документ"}))[
+        "intent"
+    ] == "support"
     assert (await classify({"query": "какая у вас погода"}))["intent"] == "off_topic"
     empty = await classify({"query": "   "})
     assert empty["intent"] == "empty"
@@ -227,3 +245,44 @@ async def test_run_chat_turn_replay_does_not_double_escalate(
         .where(Escalation.conversation_id == first.conversation_id)
     )
     assert count == 1
+
+
+async def test_cache_hit_skips_generate(
+    monkeypatch: pytest.MonkeyPatch,
+    llm_mock: MagicMock,
+    app_settings: Settings,
+) -> None:
+    import app.agent.graph as graph_mod
+
+    monkeypatch.setattr(graph_mod, "get_kb_version", AsyncMock(return_value=3))
+    monkeypatch.setattr(
+        graph_mod, "get_cached_answer", AsyncMock(return_value="из кэша")
+    )
+
+    async def fake_retriever(state: AgentState) -> list[RetrievedChunk]:
+        raise AssertionError("retrieve не должен вызываться")
+
+    graph = build_graph(llm_mock, app_settings, retriever=fake_retriever)
+    result = await graph.ainvoke(_state())
+    assert result["answer"] == "из кэша"
+    llm_mock.generate.assert_not_called()
+
+
+async def test_generate_includes_history(llm_mock: MagicMock) -> None:
+    llm_mock.generate = AsyncMock(return_value="уточнение")
+    await generate(
+        {
+            "query": "а как именно?",
+            "chunks": [],
+            "history": [
+                {"role": "user", "content": "как провести документ"},
+                {"role": "assistant", "content": "нажмите Провести"},
+            ],
+            "intent": "support",
+        },
+        llm=llm_mock,
+    )
+    prompt = llm_mock.generate.await_args.args[0][1]["content"]
+    assert "как провести документ" in prompt
+    assert "нажмите Провести" in prompt
+    assert "а как именно?" in prompt

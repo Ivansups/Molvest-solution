@@ -1,4 +1,4 @@
-"""Сборка диалогового графа: vision → classify → RAG / короткий ответ."""
+"""Сборка диалогового графа: vision → classify → кэш / RAG / короткий ответ."""
 
 import logging
 from typing import Literal
@@ -32,53 +32,50 @@ def build_graph(
     async def vision_node(state: AgentState) -> dict[str, str]:
         return await vision(state, llm=llm)
 
-    async def classify_node(state: AgentState) -> dict[str, object]:
-        return await classify(state)
-
     async def generate_node(state: AgentState) -> dict[str, object]:
-        return await _cached_generate(state, llm=llm)
+        return await _generate_and_cache(state, llm=llm)
 
     async def retrieve_node(state: AgentState) -> dict[str, object]:
         return await retrieve(state, retriever=effective_retriever)
 
     builder.add_node("vision", vision_node)
-    builder.add_node("classify", classify_node)
+    builder.add_node("classify", classify)
+    builder.add_node("lookup_cache", _lookup_cached_answer)
     builder.add_node("retrieve", retrieve_node)
     builder.add_node("generate", generate_node)
 
     builder.add_edge(START, "vision")
     builder.add_edge("vision", "classify")
     builder.add_conditional_edges("classify", _after_classify)
+    builder.add_conditional_edges("lookup_cache", _after_cache)
     builder.add_conditional_edges("retrieve", _after_retrieve)
     builder.add_edge("generate", END)
     return builder.compile()
 
 
-async def _cached_generate(
+async def _lookup_cached_answer(state: AgentState) -> dict[str, object]:
+    """Читает кэш ответа до retrieve. Промах — пустой патч."""
+    query = state.get("query") or ""
+    kb_ver = await get_kb_version()
+    cached = await get_cached_answer(query, kb_ver)
+    if cached is None:
+        logger.info("кэш ответа промах kb_version=%s", kb_ver)
+        return {}
+    logger.info("кэш ответа попадание kb_version=%s", kb_ver)
+    return {"answer": cached, "confidence": 1.0, "escalated": False}
+
+
+async def _generate_and_cache(
     state: AgentState, llm: GigaChatService
 ) -> dict[str, object]:
-    """Генерация с кэшем ответов по версии БЗ."""
-    query = state.get("query") or ""
-    kb_ver = 0
-    try:
-        kb_ver = await get_kb_version()
-        cached = await get_cached_answer(query, kb_ver)
-    except Exception:
-        logger.exception("кэш ответа недоступен")
-        cached = None
-    if cached is not None:
-        logger.info("кэш ответа попадание kb_version=%s", kb_ver)
-        return {"answer": cached}
-
-    logger.info("кэш ответа промах kb_version=%s → generate", kb_ver)
+    """Генерация и запись кэша. Сюда попадаем только без эскалации."""
     result = await generate(state, llm=llm)
     answer = result.get("answer") or ""
-    if isinstance(answer, str) and answer:
-        try:
-            await set_cached_answer(query, answer, kb_ver)
-            logger.info("кэш ответа записан kb_version=%s", kb_ver)
-        except Exception:
-            logger.exception("не удалось записать кэш ответа")
+    query = state.get("query") or ""
+    if answer and query:
+        kb_ver = await get_kb_version()
+        await set_cached_answer(query, str(answer), kb_ver)
+        logger.info("кэш ответа записан kb_version=%s", kb_ver)
     return result
 
 
@@ -92,16 +89,22 @@ def get_graph() -> CompiledStateGraph[AgentState, None]:
 
 def _after_classify(
     state: AgentState,
-) -> Literal["retrieve", "generate", "__end__"]:
+) -> Literal["lookup_cache", "__end__"]:
     intent = state.get("intent", "support")
-    if intent == "empty":
-        nxt: Literal["retrieve", "generate", "__end__"] = "__end__"
-    elif intent in ("greeting", "off_topic"):
-        nxt = "generate"
+    if intent in ("empty", "greeting", "off_topic"):
+        nxt: Literal["lookup_cache", "__end__"] = "__end__"
     else:
-        nxt = "retrieve"
+        nxt = "lookup_cache"
     logger.info("после classify intent=%s → %s", intent, nxt)
     return nxt
+
+
+def _after_cache(state: AgentState) -> Literal["retrieve", "__end__"]:
+    if state.get("answer"):
+        logger.info("после кэша попадание → конец")
+        return "__end__"
+    logger.info("после кэша промах → retrieve")
+    return "retrieve"
 
 
 def _after_retrieve(state: AgentState) -> Literal["generate", "__end__"]:

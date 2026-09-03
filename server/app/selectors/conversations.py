@@ -5,7 +5,7 @@ from uuid import UUID
 
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import InstrumentedAttribute, selectinload
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.models.conversation import Conversation
@@ -18,7 +18,7 @@ _ANSWER_ROLES = (MessageRole.ASSISTANT, MessageRole.SYSTEM)
 
 
 def _date_range_filters(
-    column: ColumnElement[datetime],
+    column: ColumnElement[datetime] | InstrumentedAttribute[datetime],
     *,
     date_from: datetime | None,
     date_to: datetime | None,
@@ -63,6 +63,23 @@ async def list_conversations(
     )
     rows = list((await session.scalars(rows_stmt)).all())
     return rows, total
+
+
+async def list_recent_messages(
+    session: AsyncSession,
+    conversation_id: UUID,
+    *,
+    limit: int = 4,
+) -> list[Message]:
+    """Последние реплики диалога в хронологическом порядке."""
+    stmt = (
+        select(Message)
+        .where(Message.conversation_id == conversation_id)
+        .order_by(Message.created_at.desc())
+        .limit(limit)
+    )
+    rows = list((await session.scalars(stmt)).all())
+    return list(reversed(rows))
 
 
 async def get_conversation(
@@ -190,4 +207,4 @@ async def _avg_response_time_seconds(
 
     if not durations:
         return 0.0
-    return round(sum(durations) / len(durations), 2)
+    return float(round(sum(durations) / len(durations), 2))
