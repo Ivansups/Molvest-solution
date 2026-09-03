@@ -48,6 +48,18 @@ async def test_upload_pdf_and_docx_are_pending(api_client: AsyncClient) -> None:
     assert docx_path.is_file()
 
 
+async def test_admin_api_requires_internal_service_token(
+    api_client: AsyncClient,
+) -> None:
+    api_client.headers.pop("Authorization")
+    api_client.headers.pop("X-Internal-Service-Token", None)
+    response = await api_client.get(
+        "/api/documents",
+        params={"installation_id": str(INSTALL_A)},
+    )
+    assert response.status_code == 401
+
+
 async def test_unsupported_type_is_rejected(api_client: AsyncClient) -> None:
     code, _ = await _upload(api_client, "note.txt", body=b"hello")
     assert code == 422

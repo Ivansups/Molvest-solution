@@ -6,7 +6,7 @@ import { loadDashboard } from "@/src/lib/server-api";
 export default async function HomePage() {
   const user = await getSession();
   if (!user) {
-    redirect("/chat");
+    redirect("/login");
   }
 
   const data = await loadDashboard(user.installationId);

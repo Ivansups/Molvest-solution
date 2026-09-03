@@ -1,14 +1,18 @@
 import type { NextConfig } from "next";
-import { getApiBaseUrl } from "./src/lib/api-base";
 
-const backendBaseUrl = getApiBaseUrl();
+function getBackendBaseUrl(): string {
+  return (process.env.API_INTERNAL_URL ?? "http://127.0.0.1:8000").replace(
+    /\/$/,
+    "",
+  );
+}
 
 const nextConfig: NextConfig = {
   async rewrites() {
     return [
       {
         source: "/backend/:path*",
-        destination: `${backendBaseUrl}/:path*`,
+        destination: `${getBackendBaseUrl()}/:path*`,
       },
     ];
   },

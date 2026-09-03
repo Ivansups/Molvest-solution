@@ -10,7 +10,7 @@ export default async function ConsoleLayout({
 }) {
   const user = await getSession();
   if (!user) {
-    redirect("/chat");
+    redirect("/login");
   }
 
   return <AppShell user={user}>{children}</AppShell>;

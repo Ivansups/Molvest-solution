@@ -9,6 +9,7 @@ from uuid import UUID
 from fastapi import (
     APIRouter,
     BackgroundTasks,
+    Depends,
     Form,
     HTTPException,
     Query,
@@ -16,6 +17,7 @@ from fastapi import (
     status,
 )
 
+from app.api.internal_auth import require_internal_service_token
 from app.core.gigachat_client import get_gigachat_service
 from app.core.logging import request_id_var
 from app.db.session import SessionDep, SessionLocal
@@ -39,7 +41,11 @@ from app.services.documents import (
     upload_document,
 )
 
-router = APIRouter(prefix="/api/documents", tags=["documents"])
+router = APIRouter(
+    prefix="/api/documents",
+    tags=["documents"],
+    dependencies=[Depends(require_internal_service_token)],
+)
 
 logger = logging.getLogger(__name__)
 

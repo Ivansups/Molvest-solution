@@ -35,12 +35,16 @@ export function LoginForm() {
 
   const handleSubmit = form.handleSubmit(async (values) => {
     try {
-      await loginAction(values.email, values.password, values.remember);
+      const redirectTo = await loginAction(
+        values.email,
+        values.password,
+        values.remember,
+      );
       toast({
         title: "Авторизация выполнена",
         description: "Открываем панель поддержки.",
       });
-      router.push("/");
+      router.push(redirectTo);
       router.refresh();
     } catch (error) {
       toast({
@@ -116,7 +120,7 @@ export function LoginForm() {
         <div className="mt-4 rounded-[20px] border border-border/70 bg-slate-50/80 p-4 text-sm leading-6 text-slate-500">
           Для локального просмотра панели:
           <br />
-          `operator@molvest.ru / password` или `admin@molvest.ru / password`
+          `operator@molvest.ru / password123` или `admin@molvest.ru / password123`
         </div>
         <div className="mt-6 rounded-[22px] border border-border/70 bg-slate-50/80 p-4 text-sm text-slate-500">
           Поддержка: support@molvest.ru
