@@ -18,8 +18,6 @@ logger = logging.getLogger(__name__)
 
 ChatRole = Literal["system", "user", "assistant"]
 
-_DATA_URL_PREFIX = "data:image/png;base64,"
-
 
 class ChatTurn(TypedDict):
     """Одно сообщение для генерации — без типов SDK."""
@@ -70,7 +68,8 @@ class GigaChatService:
             len(image_base64),
             len(prompt),
         )
-        data_url = f"{_DATA_URL_PREFIX}{_strip_data_url_prefix(image_base64)}"
+        payload = _strip_data_url_prefix(image_base64)
+        data_url = f"data:{_image_mime(payload)};base64,{payload}"
         image_part = ChatContentPart.model_validate(
             {"type": "image_url", "image_url": {"url": data_url}}
         )
@@ -130,6 +129,15 @@ def _strip_data_url_prefix(image_base64: str) -> str:
     if marker in image_base64:
         return image_base64.split(marker, 1)[1]
     return image_base64
+
+
+def _image_mime(payload: str) -> str:
+    """MIME по сигнатуре: base64 JPEG всегда начинается с /9j/ (ff d8 ff).
+
+    Клиент шлёт сжатый JPEG, старые скриншоты — PNG; на слово клиенту тут
+    верить нельзя, а на эти два формата приходится всё, что доходит до Vision.
+    """
+    return "image/jpeg" if payload.startswith("/9j/") else "image/png"
 
 
 _service = GigaChatService()

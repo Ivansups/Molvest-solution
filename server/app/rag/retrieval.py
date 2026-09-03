@@ -25,8 +25,11 @@ _WORKSPACE_NAMESPACE = UUID("41f7c1f7-0000-4f6e-9c6e-000000000001")
 
 
 def workspace_to_installation_id(workspace_id: str) -> UUID:
-    """Детерминированно мапит workspace_id в installation_id (UUID)."""
-    return uuid5(_WORKSPACE_NAMESPACE, workspace_id)
+    """UUID-строка — как есть. Иначе детерминированный uuid5."""
+    try:
+        return UUID(workspace_id)
+    except ValueError:
+        return uuid5(_WORKSPACE_NAMESPACE, workspace_id)
 
 
 def make_retriever(

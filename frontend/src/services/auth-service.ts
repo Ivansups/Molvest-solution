@@ -1,3 +1,4 @@
+import { DEFAULT_INSTALLATION_ID } from "@/src/lib/installation";
 import { delay } from "@/src/services/service-helpers";
 import type { UserSession } from "@/src/types/domain";
 
@@ -13,7 +14,7 @@ export const authService = {
       name: role === "operator" ? "Анна Лебедева" : "Екатерина Романова",
       email,
       role,
-      installationId: "7c77cfdc-2806-4e0f-a95f-c98d7a5b2f11",
+      installationId: DEFAULT_INSTALLATION_ID,
     });
   },
 };

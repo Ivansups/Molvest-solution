@@ -3,6 +3,7 @@ import {
   getClientSession,
   setClientSession,
 } from "@/src/lib/client-session";
+import { DEFAULT_INSTALLATION_ID } from "@/src/lib/installation";
 import { getStoredInstallationId } from "@/src/services/service-helpers";
 import type { UserSession } from "@/src/types/domain";
 
@@ -11,7 +12,7 @@ const user: UserSession = {
   name: "Анна",
   email: "operator@molvest.ru",
   role: "operator",
-  installationId: "7c77cfdc-2806-4e0f-a95f-c98d7a5b2f11",
+  installationId: DEFAULT_INSTALLATION_ID,
 };
 
 describe("getStoredInstallationId", () => {

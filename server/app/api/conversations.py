@@ -5,8 +5,9 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from app.core.security import require_internal_token
 from app.db.session import SessionDep
 from app.models.enums import ConversationStatus
 from app.schemas.conversations import (
@@ -18,7 +19,11 @@ from app.schemas.conversations import (
 )
 from app.selectors import conversations as conversation_selectors
 
-router = APIRouter(prefix="/api/conversations", tags=["conversations"])
+router = APIRouter(
+    prefix="/api/conversations",
+    tags=["conversations"],
+    dependencies=[Depends(require_internal_token)],
+)
 
 logger = logging.getLogger(__name__)
 

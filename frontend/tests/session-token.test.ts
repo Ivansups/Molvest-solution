@@ -3,6 +3,7 @@ import {
   decodeSessionToken,
   encodeSessionToken,
 } from "@/src/lib/session-token";
+import { DEFAULT_INSTALLATION_ID } from "@/src/lib/installation";
 import type { UserSession } from "@/src/types/domain";
 
 const user: UserSession = {
@@ -10,7 +11,7 @@ const user: UserSession = {
   name: "Анна",
   email: "operator@molvest.ru",
   role: "operator",
-  installationId: "7c77cfdc-2806-4e0f-a95f-c98d7a5b2f11",
+  installationId: DEFAULT_INSTALLATION_ID,
 };
 
 const secret = "test-session-secret";

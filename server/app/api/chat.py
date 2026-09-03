@@ -2,14 +2,18 @@
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from app.core.logging import preview
+from app.core.security import require_internal_token
 from app.db.session import SessionDep
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services.agent import run_chat_turn
 
-router = APIRouter(tags=["chat"])
+router = APIRouter(
+    tags=["chat"],
+    dependencies=[Depends(require_internal_token)],
+)
 logger = logging.getLogger(__name__)
 
 

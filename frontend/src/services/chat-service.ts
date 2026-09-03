@@ -25,7 +25,9 @@ export const chatService = {
     request: ChatRequest,
   ): Promise<ChatResponse> {
     try {
-      const response = await apiClient.post<ChatResponse>("/chat", request);
+      const response = await apiClient.post<ChatResponse>("/chat", request, {
+        timeout: 60_000,
+      });
       return response.data;
     } catch (error) {
       throw toServiceError(
