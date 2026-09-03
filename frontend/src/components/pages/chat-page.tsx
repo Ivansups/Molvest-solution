@@ -80,6 +80,7 @@ export function ChatPage({
     queryKey: ["conversations"],
     queryFn: () => chatService.listConversations(),
     enabled: isSupportMode,
+    refetchInterval: 5_000,
   });
 
   const selectedId = isSupportMode
@@ -307,8 +308,8 @@ export function ChatPage({
   if (conversationsQuery.isError) {
     return (
       <ApiStateCard
-        title="Support-чат ждёт backend endpoint"
-        description="Публичный `/chat` уже подключён к FastAPI, но список и история диалогов для панели поддержки сервер пока не публикует."
+        title="Не удалось загрузить список диалогов"
+        description="Проверьте, что backend запущен и доступен `/api/conversations`."
         detail={
           conversationsQuery.error instanceof Error
             ? conversationsQuery.error.message
