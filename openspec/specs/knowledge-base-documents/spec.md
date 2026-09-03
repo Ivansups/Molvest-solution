@@ -1,6 +1,6 @@
 ## Purpose
 
-Storage and admin API for knowledge-base documents and chunks. Indexing and embeddings are out of scope until a later change.
+Storage and admin API for knowledge-base documents and chunks. A successful upload queues the same background indexing as reindex.
 
 ## Requirements
 
@@ -15,7 +15,7 @@ The system SHALL persist Document and Chunk rows in PostgreSQL with the fields d
 
 ### Requirement: Upload creates a pending document
 
-The system SHALL accept `POST /api/documents` as multipart form data with `file`, `title`, and `installation_id`. Optional `metadata` MAY be a JSON object string. Allowed file types are PDF, DOCX, HTML, and MD. On success the system SHALL store the file on disk, persist a Document with status `PENDING`, and SHALL NOT create chunks or embeddings.
+The system SHALL accept `POST /api/documents` as multipart form data with `file`, `title`, and `installation_id`. Optional `metadata` MAY be a JSON object string. Allowed file types are PDF, DOCX, HTML, and MD. On success the system SHALL store the file on disk, persist a Document with status `PENDING`, return `201` without waiting for embeddings, and SHALL start the same background indexing task used by reindex.
 
 #### Scenario: Upload PDF
 
@@ -26,6 +26,11 @@ The system SHALL accept `POST /api/documents` as multipart form data with `file`
 
 - **WHEN** a client uploads a DOCX with a title and installation id
 - **THEN** the API returns the document with status `PENDING` and the file is stored on disk
+
+#### Scenario: Upload starts background indexing
+
+- **WHEN** a client uploads a supported document
+- **THEN** the API returns `201` with status `PENDING` and indexing of that document is started in the background
 
 #### Scenario: Reject unsupported type
 
