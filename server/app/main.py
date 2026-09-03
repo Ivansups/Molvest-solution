@@ -11,6 +11,7 @@ from app.api.conversations import router as conversations_router
 from app.api.documents import router as documents_router
 from app.api.health import router as health_router
 from app.api.metrics import router as metrics_router
+from app.core.errors import error_envelope, register_error_handlers
 from app.core.logging import request_id_var, setup_logging
 
 setup_logging()
@@ -18,6 +19,7 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Molvest AI-Agent API")
+register_error_handlers(app)
 
 app.include_router(health_router)
 app.include_router(chat_router)
@@ -44,7 +46,11 @@ async def log_requests(
             response = await call_next(request)
         except Exception:
             logger.exception("сбой %s %s", request.method, path)
-            raise
+            return error_envelope(
+                error="internal_error",
+                detail="Внутренняя ошибка сервера",
+                status_code=500,
+            )
         if path not in _SKIP_ACCESS_LOG:
             logger.info(
                 "ответ %s %s status=%s",
