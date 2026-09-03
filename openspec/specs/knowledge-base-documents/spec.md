@@ -65,6 +65,20 @@ The system SHALL enforce uniqueness of `(installation_id, file_name)`. A second 
 - **WHEN** a client requests the list with `status=PENDING`
 - **THEN** the API returns only documents in that status for the installation
 
+### Requirement: Per-document endpoints can be scoped to one installation
+
+`GET`, `DELETE` and `POST .../reindex` on `/api/documents/{id}` SHALL accept an
+optional `installation_id` query parameter. When it is given, a document that
+belongs to another installation SHALL be indistinguishable from a missing one
+and return 404. The support console SHALL always send the installation id of the
+signed-in staff session.
+
+#### Scenario: Document of another installation
+
+- **WHEN** a client fetches, reindexes or deletes a document id with an
+  `installation_id` that does not own it
+- **THEN** the API returns 404 and the document is left untouched
+
 ### Requirement: Get document includes chunks
 
 `GET /api/documents/{id}` SHALL return the document and its chunks. When no chunks exist, the chunks list SHALL be empty. A missing id SHALL return 404.

@@ -2,7 +2,7 @@
 
 export const INTERNAL_TOKEN_HEADER = "X-Internal-Token";
 
-export function internalTokenHeaders(): HeadersInit {
+export function internalTokenHeaders(): Record<string, string> {
   const token = process.env.INTERNAL_SERVICE_TOKEN ?? "";
   if (!token) {
     return {};

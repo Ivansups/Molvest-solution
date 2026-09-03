@@ -1,21 +1,39 @@
 ## Purpose
 
-Support staff authentication for the internal console, including persistent
-`NextAuth` sessions, Prisma-managed auth tables, and seeded demo users.
+Support staff authentication for the internal console, including `NextAuth`
+JWT sessions, Prisma-managed auth tables, and seeded demo users.
 
 ## Requirements
 
-### Requirement: Staff login uses NextAuth with Prisma-backed users and sessions
+### Requirement: Staff login uses NextAuth with Prisma-backed users
 
 The system SHALL authenticate support staff in `frontend/` via `NextAuth`
-Credentials and persist users and sessions in Prisma-managed Postgres auth
-tables that do not overlap with domain tables managed by Alembic.
+Credentials against users stored in Prisma-managed Postgres auth tables that do
+not overlap with domain tables managed by Alembic. Because the Credentials
+provider never writes a session row, the session SHALL be carried in a signed
+`NextAuth` JWT cookie.
 
 #### Scenario: Staff user signs in
 
 - **WHEN** a support employee submits a valid email and password on `/login`
-- **THEN** the system creates or reuses a `NextAuth` session stored in the auth
-  tables and grants access to the support console
+- **THEN** the system issues a `NextAuth` JWT session carrying the user id, role
+  and installation id, and grants access to the support console
+
+#### Scenario: Staff user opts out of "remember me"
+
+- **WHEN** a support employee signs in with the "запомнить меня" checkbox cleared
+- **THEN** the session cookie SHALL have no expiry and end with the browser session
+
+### Requirement: Roles are accepted only from an explicit stored value
+
+The system SHALL derive a staff role only from an explicit known role value
+(`admin` or `operator`). An absent, empty or unknown role SHALL deny the
+session rather than fall back to a privileged role.
+
+#### Scenario: Unknown role denies access
+
+- **WHEN** a staff row carries no role or an unrecognised role
+- **THEN** the session resolves to no authenticated user
 
 ### Requirement: Demo support users are seeded explicitly
 

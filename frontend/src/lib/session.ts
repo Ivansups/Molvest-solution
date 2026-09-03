@@ -1,17 +1,12 @@
 import { cache } from "react";
 import { toUserSession } from "@/src/lib/auth-user";
+import { isNextProductionBuild } from "@/src/lib/build-phase";
 import type { UserSession } from "@/src/types/domain";
 
-function hasAuthDatabaseConfig(): boolean {
-  return Boolean(
-    process.env.AUTH_DATABASE_URL?.trim() ||
-      process.env.DATABASE_URL?.trim(),
-  );
-}
-
 export const getSession = cache(async (): Promise<UserSession | null> => {
-  // Публичные страницы должны собираться даже без auth-БД в окружении build.
-  if (!hasAuthDatabaseConfig()) {
+  // Публичные страницы должны собираться без auth-БД. В рантайме отсутствие
+  // конфигурации — ошибка, а не «пользователь не залогинен».
+  if (isNextProductionBuild()) {
     return null;
   }
 

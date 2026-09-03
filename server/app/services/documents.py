@@ -119,9 +119,11 @@ async def upload_document(
 async def delete_document(
     session: AsyncSession,
     document_id: UUID,
+    *,
+    installation_id: UUID | None = None,
 ) -> None:
     """Удаляет документ (чанки каскадом) и файл, если он есть."""
-    document = await get_document(session, document_id)
+    document = await get_document(session, document_id, installation_id=installation_id)
     if document is None:
         raise DocumentNotFoundError(document_id)
     path = _path_from_metadata(document)

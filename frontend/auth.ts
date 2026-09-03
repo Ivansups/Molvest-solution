@@ -6,6 +6,16 @@ import { z } from "zod";
 import { displayNameForRole, getSupportInstallationId, resolveUserRole } from "@/src/lib/auth-user";
 import { prisma } from "@/src/lib/prisma";
 
+/**
+ * Свои claim-ы JWT: augmentation `next-auth/jwt` не доходит до `@auth/core/jwt`,
+ * поэтому токен в колбэке остаётся нетипизированным.
+ */
+type SessionClaims = {
+  id?: string;
+  role?: string;
+  installationId?: string;
+};
+
 const credentialsSchema = z.object({
   email: z.string().email().transform((value) => value.trim().toLowerCase()),
   password: z.string().min(1),
@@ -13,8 +23,11 @@ const credentialsSchema = z.object({
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
+  // Credentials-провайдер не создаёт строку в auth_sessions: Auth.js всегда
+  // выдаёт подписанную куку. При strategy "database" auth() искал бы её как
+  // session_token и всегда возвращал null.
   session: {
-    strategy: "database",
+    strategy: "jwt",
   },
   pages: {
     signIn: "/login",
@@ -43,7 +56,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           return null;
         }
 
-        const role = resolveUserRole(user.email, user.role);
+        const role = resolveUserRole(user.role);
         if (!role) {
           return null;
         }
@@ -59,23 +72,24 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    async session({ session, user }) {
+    async jwt({ token, user }) {
+      if (user) {
+        token.id = user.id;
+        token.role = user.role;
+        token.installationId = user.installationId;
+      }
+      return token;
+    },
+    async session({ session, token }) {
       if (!session.user) {
         return session;
       }
 
-      const role =
-        resolveUserRole(
-          user?.email ?? session.user.email ?? "",
-          user?.role ?? null,
-        ) ?? "admin";
-
-      session.user.id = user?.id ?? "";
-      session.user.role = role;
+      const claims = token as SessionClaims;
+      session.user.id = claims.id ?? "";
+      session.user.role = resolveUserRole(claims.role) ?? undefined;
       session.user.installationId =
-        user?.installationId ?? getSupportInstallationId();
-      session.user.name = session.user.name ?? user?.name ?? displayNameForRole(role);
-      session.user.email = session.user.email ?? user?.email ?? "";
+        claims.installationId ?? getSupportInstallationId();
 
       return session;
     },

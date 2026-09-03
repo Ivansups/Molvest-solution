@@ -16,11 +16,3 @@ declare module "next-auth" {
     installationId?: string;
   }
 }
-
-declare module "next-auth/jwt" {
-  interface JWT {
-    id?: string;
-    role?: AppRole;
-    installationId?: string;
-  }
-}

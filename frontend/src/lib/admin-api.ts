@@ -2,7 +2,7 @@ import "server-only";
 
 import { getApiBaseUrl } from "@/src/lib/api-base";
 import { toUserSession } from "@/src/lib/auth-user";
-import { INTERNAL_TOKEN_HEADER } from "@/src/lib/internal-token";
+import { internalTokenHeaders } from "@/src/lib/internal-token";
 import type { UserSession } from "@/src/types/domain";
 
 export async function requireAuthenticatedUser(): Promise<UserSession | null> {
@@ -10,21 +10,16 @@ export async function requireAuthenticatedUser(): Promise<UserSession | null> {
   return toUserSession(await auth());
 }
 
-function getInternalServiceToken(): string {
-  const token = process.env.INTERNAL_SERVICE_TOKEN?.trim();
-  if (!token) {
-    throw new Error("INTERNAL_SERVICE_TOKEN is not set");
-  }
-  return token;
-}
-
 export async function fetchAdminApi(
   path: string,
   init?: RequestInit,
 ): Promise<Response> {
+  // Пустой INTERNAL_SERVICE_TOKEN — штатная локальная конфигурация:
+  // backend в этом случае проверку не требует.
   const headers = new Headers(init?.headers);
-  const token = getInternalServiceToken();
-  headers.set(INTERNAL_TOKEN_HEADER, token);
+  for (const [name, value] of Object.entries(internalTokenHeaders())) {
+    headers.set(name, value);
+  }
 
   return fetch(`${getApiBaseUrl()}${path}`, {
     ...init,

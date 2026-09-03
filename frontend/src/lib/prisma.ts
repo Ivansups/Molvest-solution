@@ -1,17 +1,11 @@
 import { PrismaClient } from "@prisma/client";
+import { isNextProductionBuild } from "@/src/lib/build-phase";
 
 const globalForPrisma = globalThis as {
   prisma?: PrismaClient;
 };
 
 const BUILD_DATABASE_URL = "postgresql://build:build@127.0.0.1:5432/build";
-
-function isNextProductionBuild(): boolean {
-  return (
-    process.env.NEXT_PHASE === "phase-production-build" ||
-    process.env.NEXT_PRIVATE_BUILD_WORKER === "1"
-  );
-}
 
 function resolveDatabaseUrl(): string {
   const authDatabaseUrl = process.env.AUTH_DATABASE_URL?.trim();

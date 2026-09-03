@@ -136,10 +136,19 @@ async def upload_document_route(
 async def get_document_route(
     session: SessionDep,
     document_id: UUID,
+    installation_id: UUID | None = None,
 ) -> DocumentDetailOut:
-    """Карточка документа с чанками."""
-    logger.info("карточка document_id=%s", document_id)
-    document = await document_selectors.get_document(session, document_id)
+    """Карточка документа с чанками, опционально в границах установки."""
+    logger.info(
+        "карточка document_id=%s installation_id=%s",
+        document_id,
+        installation_id,
+    )
+    document = await document_selectors.get_document(
+        session,
+        document_id,
+        installation_id=installation_id,
+    )
     if document is None:
         logger.warning("карточка не найдена document_id=%s", document_id)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Не найден")
@@ -153,11 +162,19 @@ async def get_document_route(
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_document_route(session: SessionDep, document_id: UUID) -> None:
+async def delete_document_route(
+    session: SessionDep,
+    document_id: UUID,
+    installation_id: UUID | None = None,
+) -> None:
     """Удаляет документ, чанки и файл на диске."""
-    logger.info("удаление document_id=%s", document_id)
+    logger.info(
+        "удаление document_id=%s installation_id=%s",
+        document_id,
+        installation_id,
+    )
     try:
-        await delete_document(session, document_id)
+        await delete_document(session, document_id, installation_id=installation_id)
     except DocumentNotFoundError as exc:
         logger.warning("удаление: документ не найден document_id=%s", document_id)
         raise HTTPException(
@@ -172,10 +189,19 @@ async def reindex_document_route(
     session: SessionDep,
     background_tasks: BackgroundTasks,
     document_id: UUID,
+    installation_id: UUID | None = None,
 ) -> DocumentOut:
     """Запускает реиндексацию в фоне и сразу возвращает документ."""
-    logger.info("реиндекс принят document_id=%s", document_id)
-    document = await document_selectors.get_document(session, document_id)
+    logger.info(
+        "реиндекс принят document_id=%s installation_id=%s",
+        document_id,
+        installation_id,
+    )
+    document = await document_selectors.get_document(
+        session,
+        document_id,
+        installation_id=installation_id,
+    )
     if document is None:
         logger.warning("реиндекс: документ не найден document_id=%s", document_id)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Не найден")

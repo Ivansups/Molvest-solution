@@ -24,7 +24,7 @@ CREATE TABLE "auth_accounts" (
     "session_state" TEXT,
 
     CONSTRAINT "pk_auth_accounts" PRIMARY KEY ("id"),
-    CONSTRAINT "fk_auth_accounts_user_id" FOREIGN KEY ("user_id") REFERENCES "auth_users"("id") ON DELETE CASCADE
+    CONSTRAINT "fk_auth_accounts_user_id" FOREIGN KEY ("user_id") REFERENCES "auth_users"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 CREATE TABLE "auth_sessions" (
@@ -34,7 +34,7 @@ CREATE TABLE "auth_sessions" (
     "expires" TIMESTAMPTZ(3) NOT NULL,
 
     CONSTRAINT "pk_auth_sessions" PRIMARY KEY ("id"),
-    CONSTRAINT "fk_auth_sessions_user_id" FOREIGN KEY ("user_id") REFERENCES "auth_users"("id") ON DELETE CASCADE
+    CONSTRAINT "fk_auth_sessions_user_id" FOREIGN KEY ("user_id") REFERENCES "auth_users"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 CREATE TABLE "auth_verification_tokens" (

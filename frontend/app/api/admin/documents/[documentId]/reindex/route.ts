@@ -16,7 +16,9 @@ export async function POST(
   }
 
   const { documentId } = await params;
-  return proxyAdminApi(`/api/documents/${documentId}/reindex`, {
-    method: "POST",
-  });
+  const scope = new URLSearchParams({ installation_id: user.installationId });
+  return proxyAdminApi(
+    `/api/documents/${documentId}/reindex?${scope.toString()}`,
+    { method: "POST" },
+  );
 }

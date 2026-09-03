@@ -16,7 +16,8 @@ export async function GET(
   }
 
   const { documentId } = await params;
-  return proxyAdminApi(`/api/documents/${documentId}`);
+  const scope = new URLSearchParams({ installation_id: user.installationId });
+  return proxyAdminApi(`/api/documents/${documentId}?${scope.toString()}`);
 }
 
 export async function DELETE(
@@ -32,7 +33,8 @@ export async function DELETE(
   }
 
   const { documentId } = await params;
-  return proxyAdminApi(`/api/documents/${documentId}`, {
+  const scope = new URLSearchParams({ installation_id: user.installationId });
+  return proxyAdminApi(`/api/documents/${documentId}?${scope.toString()}`, {
     method: "DELETE",
   });
 }

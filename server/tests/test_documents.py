@@ -191,3 +191,30 @@ async def test_reindex_unknown_document_is_404(
 ) -> None:
     response = await api_client.post(f"/api/documents/{uuid4()}/reindex")
     assert response.status_code == 404
+
+
+async def test_installation_scope_hides_foreign_document(
+    api_client: AsyncClient,
+) -> None:
+    code, created = await _upload(api_client, "foreign.pdf", installation_id=INSTALL_A)
+    assert code == 201
+    document_id = str(created["id"])
+    foreign = {"installation_id": str(INSTALL_B)}
+
+    detail = await api_client.get(f"/api/documents/{document_id}", params=foreign)
+    assert detail.status_code == 404
+
+    reindex = await api_client.post(
+        f"/api/documents/{document_id}/reindex",
+        params=foreign,
+    )
+    assert reindex.status_code == 404
+
+    deleted = await api_client.delete(f"/api/documents/{document_id}", params=foreign)
+    assert deleted.status_code == 404
+
+    own = await api_client.get(
+        f"/api/documents/{document_id}",
+        params={"installation_id": str(INSTALL_A)},
+    )
+    assert own.status_code == 200

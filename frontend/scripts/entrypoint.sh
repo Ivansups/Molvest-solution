@@ -6,4 +6,9 @@ if [ ! -f node_modules/next/dist/bin/next ]; then
   pnpm install --frozen-lockfile
 fi
 
+echo "Applying auth migrations..."
+pnpm exec prisma migrate deploy
+echo "Seeding staff accounts..."
+pnpm exec prisma db seed
+
 exec pnpm exec next dev --hostname 0.0.0.0 --port 3000
