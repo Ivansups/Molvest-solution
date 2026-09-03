@@ -144,7 +144,10 @@ async def test_get_detail_returns_messages_and_escalations(
 ) -> None:
     conv = await _make_conversation(db_session, user_id="detail", escalated=True)
 
-    response = await api_client.get(f"/api/conversations/{conv.id}")
+    response = await api_client.get(
+        f"/api/conversations/{conv.id}",
+        params={"installation_id": str(INSTALL)},
+    )
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "escalated"
@@ -161,7 +164,23 @@ async def test_get_detail_returns_messages_and_escalations(
 async def test_get_detail_unknown_id_returns_404(
     api_client: AsyncClient,
 ) -> None:
-    response = await api_client.get(f"/api/conversations/{uuid4()}")
+    response = await api_client.get(
+        f"/api/conversations/{uuid4()}",
+        params={"installation_id": str(INSTALL)},
+    )
+    assert response.status_code == 404
+
+
+async def test_get_detail_scoped_to_installation_returns_404(
+    api_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    conv = await _make_conversation(db_session, installation_id=OTHER_INSTALL)
+
+    response = await api_client.get(
+        f"/api/conversations/{conv.id}",
+        params={"installation_id": str(INSTALL)},
+    )
     assert response.status_code == 404
 
 
@@ -172,8 +191,14 @@ async def test_metrics_returns_auto_answer_percent_and_count(
     # 1 автоответ (assistant, не escalated) + 1 эскалированный (system, escalated)
     await _make_conversation(db_session, user_id="auto", escalated=False)
     await _make_conversation(db_session, user_id="esc", escalated=True)
+    # шум в другой установке не должен попадать в метрики INSTALL
+    await _make_conversation(
+        db_session, installation_id=OTHER_INSTALL, user_id="other", escalated=True
+    )
 
-    response = await api_client.get("/api/metrics")
+    response = await api_client.get(
+        "/api/metrics", params={"installation_id": str(INSTALL)}
+    )
     assert response.status_code == 200
     body = response.json()
     # 2 ассистентских/system ответа всего, 1 из них эскалирован → 50% автоответов
@@ -185,7 +210,9 @@ async def test_metrics_returns_auto_answer_percent_and_count(
 async def test_metrics_empty_installation_is_zero(
     api_client: AsyncClient,
 ) -> None:
-    response = await api_client.get("/api/metrics")
+    response = await api_client.get(
+        "/api/metrics", params={"installation_id": str(INSTALL)}
+    )
     body = response.json()
     assert body["auto_answer_percent"] == 0.0
     assert body["escalation_count"] == 0

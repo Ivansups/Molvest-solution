@@ -5,6 +5,7 @@
 """
 
 import logging
+from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,16 +25,12 @@ GUEST_ESCALATION_TEXT = "Вопрос передан оператору техп
 _ESCALATED_TO = "operator"
 
 
+@dataclass
 class PersistedTurn:
     """Результат записи одного хода: диалог и сообщение ассистента."""
 
-    def __init__(
-        self,
-        conversation: Conversation,
-        assistant_message: Message,
-    ) -> None:
-        self.conversation = conversation
-        self.assistant_message = assistant_message
+    conversation: Conversation
+    assistant_message: Message
 
 
 async def find_or_create_conversation(
@@ -43,10 +40,15 @@ async def find_or_create_conversation(
     installation_id: UUID,
     user_id: str,
 ) -> Conversation:
-    """Возвращает существующий диалог или создаёт новый со статусом open."""
+    """Возвращает существующий диалог или создаёт новый со статусом open.
+
+    Диалог с чужим `installation_id` игнорируется и трактуется как
+    отсутствующий, чтобы клиент одной установки не мог дописывать сообщения
+    или эскалировать диалог другой установки, подставив чужой id.
+    """
     if conversation_id is not None:
         conversation = await session.get(Conversation, conversation_id)
-        if conversation is not None:
+        if conversation is not None and conversation.installation_id == installation_id:
             return conversation
     conversation = Conversation(
         installation_id=installation_id,
@@ -153,8 +155,6 @@ async def persist_turn(
             reason=reason,
         )
     await session.commit()
-    await session.refresh(conversation)
-    await session.refresh(assistant)
     logger.info(
         "ход записан conversation_id=%s escalated=%s",
         conversation.id,

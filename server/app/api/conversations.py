@@ -5,10 +5,9 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, HTTPException, Query, status
 
-from app.db.session import get_session
+from app.db.session import SessionDep
 from app.models.enums import ConversationStatus
 from app.schemas.conversations import (
     ConversationDetailOut,
@@ -22,8 +21,6 @@ from app.selectors import conversations as conversation_selectors
 router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 
 logger = logging.getLogger(__name__)
-
-SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 
 @router.get("")
@@ -68,15 +65,22 @@ async def list_conversations_route(
 async def get_conversation_route(
     session: SessionDep,
     conversation_id: UUID,
+    installation_id: UUID,
 ) -> ConversationDetailOut:
     """Карточка диалога: сообщения и эскалации."""
-    logger.info("карточка диалога conversation_id=%s", conversation_id)
+    logger.info(
+        "карточка диалога conversation_id=%s installation_id=%s",
+        conversation_id,
+        installation_id,
+    )
     conversation = await conversation_selectors.get_conversation(
-        session, conversation_id
+        session, conversation_id, installation_id
     )
     if conversation is None:
         logger.warning(
-            "карточка диалога не найдена conversation_id=%s", conversation_id
+            "карточка диалога не найдена conversation_id=%s installation_id=%s",
+            conversation_id,
+            installation_id,
         )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

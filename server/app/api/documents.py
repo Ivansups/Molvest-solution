@@ -9,18 +9,16 @@ from uuid import UUID
 from fastapi import (
     APIRouter,
     BackgroundTasks,
-    Depends,
     Form,
     HTTPException,
     Query,
     UploadFile,
     status,
 )
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.gigachat_client import get_gigachat_service
 from app.core.logging import request_id_var
-from app.db.session import SessionLocal, get_session
+from app.db.session import SessionDep, SessionLocal
 from app.models.enums import DocumentStatus, FileType
 from app.schemas.documents import (
     DocumentDetailOut,
@@ -44,8 +42,6 @@ from app.services.documents import (
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
 logger = logging.getLogger(__name__)
-
-SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 
 @router.get("")

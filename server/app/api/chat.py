@@ -1,20 +1,16 @@
 """Роутер POST /chat — валидация контракта и вызов графа агента."""
 
 import logging
-from typing import Annotated
 
-from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter
 
 from app.core.logging import preview
-from app.db.session import get_session
+from app.db.session import SessionDep
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services.agent import run_chat_turn
 
 router = APIRouter(tags=["chat"])
 logger = logging.getLogger(__name__)
-
-SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 
 @router.post("/chat")

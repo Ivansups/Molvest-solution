@@ -2,12 +2,11 @@
 
 import logging
 from datetime import datetime
-from typing import Annotated
+from uuid import UUID
 
-from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter
 
-from app.db.session import get_session
+from app.db.session import SessionDep
 from app.schemas.conversations import ConversationMetrics
 from app.selectors import conversations as conversation_selectors
 
@@ -15,19 +14,24 @@ router = APIRouter(prefix="/api", tags=["metrics"])
 
 logger = logging.getLogger(__name__)
 
-SessionDep = Annotated[AsyncSession, Depends(get_session)]
-
 
 @router.get("/metrics")
 async def metrics_route(
     session: SessionDep,
+    installation_id: UUID,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
 ) -> ConversationMetrics:
-    """Агрегированные метрики диалогов: автоответы, время, эскалации."""
-    logger.info("метрики date_from=%s date_to=%s", date_from, date_to)
+    """Агрегированные метрики диалогов установки: автоответы, время, эскалации."""
+    logger.info(
+        "метрики installation_id=%s date_from=%s date_to=%s",
+        installation_id,
+        date_from,
+        date_to,
+    )
     data = await conversation_selectors.conversation_metrics(
         session,
+        installation_id=installation_id,
         date_from=date_from,
         date_to=date_to,
     )
