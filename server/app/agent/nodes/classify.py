@@ -1,6 +1,7 @@
 """Классификация обращения: приветствие, не по теме или вопрос по 1С."""
 
 import logging
+import re
 
 from app.agent.state import AgentState
 from app.core.logging import preview
@@ -8,43 +9,55 @@ from app.core.logging import preview
 logger = logging.getLogger(__name__)
 
 _EMPTY_REPLY = "Опишите проблему текстом или приложите скриншот ошибки 1С."
+_GREETING_REPLY = (
+    "Здравствуйте! Опишите проблему по 1С — текстом или приложите скриншот."
+)
+_OFF_TOPIC_REPLY = (
+    "Я помогаю только с вопросами по 1С и работе в учётной системе Молвест. "
+    "Опишите проблему по 1С."
+)
 
 _GREETING_RE = (
-    r"\b(привет|здравствуй|спасибо|пожалуйста|добрый|доброе|доброе утро|"
-    r"добрый день|добрый вечер|пока|до свидания| hail|hello|hi|thanks|bye)\b"
+    r"\b(привет|здравствуй|здравствуйте|спасибо|пожалуйста|добрый|доброе|доброе утро|"
+    r"добрый день|добрый вечер|пока|до свидания|hello|hi|thanks|bye)\b"
 )
 
+# Только левая граница слова: элементы — основы, а не целые слова, поэтому
+# закрывающий \b обрезал бы «ошибка», «настройки», «зарплата» и т.п.
 _SUPPORT_RE = (
-    r"\b(1с|1с[-\s]?ursed|учёт|учет|система|конфигурация|ошибк|проблем|"
+    r"\b(1с|учёт|учет|систем|конфигурац|ошибк|проблем|"
     r"не работа|не запуска|не открывается|не записывает|не проводит|"
     r"документ|справочник|отчёт|отчет|настройк|обновлен|регистр|"
-    r"запрос|блокировк|права|роль|interfacedrive|erp|бухгалтер|"
-    r"калькуляц|себестоимост|зарплат|кадр|inventory|ufenpflege)\b"
+    r"запрос|блокировк|права|роль|erp|бухгалтер|"
+    r"калькуляц|себестоимост|зарплат|кадр)"
 )
 
 
-async def classify(state: AgentState, *, llm: object = None) -> dict[str, object]:  # noqa: ARG001
-    """Определяет intent по правилам (без LLM)."""
-    import re
+def _canned(query: str, intent: str, answer: str) -> dict[str, object]:
+    return {
+        "query": query,
+        "intent": intent,
+        "answer": answer,
+        "confidence": 1.0,
+        "escalated": False,
+    }
 
+
+async def classify(state: AgentState) -> dict[str, object]:
+    """Определяет intent по правилам (без LLM). Support важнее приветствия."""
     query = (state.get("query") or "").strip()
     if not query:
         logger.info("classify intent=empty")
-        return {
-            "query": "",
-            "intent": "empty",
-            "answer": _EMPTY_REPLY,
-            "confidence": 1.0,
-            "escalated": False,
-        }
+        return _canned("", "empty", _EMPTY_REPLY)
 
     lower = query.lower()
-    if re.search(_GREETING_RE, lower):
-        intent = "greeting"
-    elif re.search(_SUPPORT_RE, lower):
-        intent = "support"
-    else:
-        intent = "off_topic"
+    if re.search(_SUPPORT_RE, lower):
+        logger.info("classify intent=support query=%s", preview(query))
+        return {"query": query, "intent": "support"}
 
-    logger.info("classify intent=%s query=%s", intent, preview(query))
-    return {"query": query, "intent": intent}
+    if re.search(_GREETING_RE, lower):
+        logger.info("classify intent=greeting query=%s", preview(query))
+        return _canned(query, "greeting", _GREETING_REPLY)
+
+    logger.info("classify intent=off_topic query=%s", preview(query))
+    return _canned(query, "off_topic", _OFF_TOPIC_REPLY)

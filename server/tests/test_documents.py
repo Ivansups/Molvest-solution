@@ -170,12 +170,32 @@ async def test_reindex_schedules_background_task(
     )
     assert code == 201
     document_id = UUID(str(created["id"]))
+    assert ran == [document_id]
 
     accepted = await api_client.post(f"/api/documents/{document_id}/reindex")
     assert accepted.status_code == 202
     assert accepted.json()["status"] == DocumentStatus.PENDING
     assert accepted.json()["id"] == str(document_id)
-    assert ran == [document_id]
+    assert ran == [document_id, document_id]
+
+
+async def test_upload_starts_background_index(
+    api_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.api.documents as documents_api
+
+    ran: list[UUID] = []
+
+    async def fake_background(document_id: UUID, request_id: str) -> None:
+        assert request_id
+        ran.append(document_id)
+
+    monkeypatch.setattr(documents_api, "_reindex_in_background", fake_background)
+    code, created = await _upload(api_client, "queued.md", body=b"# 1C")
+    assert code == 201
+    assert created["status"] == DocumentStatus.PENDING
+    assert ran == [UUID(str(created["id"]))]
 
 
 async def test_reindex_unknown_document_is_404(

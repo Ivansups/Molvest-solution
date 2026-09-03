@@ -17,9 +17,9 @@ from fastapi import (
     status,
 )
 
-from app.api.internal_auth import require_internal_service_token
 from app.core.gigachat_client import get_gigachat_service
 from app.core.logging import request_id_var
+from app.core.security import require_internal_token
 from app.db.session import SessionDep, SessionLocal
 from app.models.enums import DocumentStatus, FileType
 from app.schemas.documents import (
@@ -44,7 +44,7 @@ from app.services.documents import (
 router = APIRouter(
     prefix="/api/documents",
     tags=["documents"],
-    dependencies=[Depends(require_internal_service_token)],
+    dependencies=[Depends(require_internal_token)],
 )
 
 logger = logging.getLogger(__name__)
@@ -89,12 +89,13 @@ async def list_documents_route(
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def upload_document_route(
     session: SessionDep,
+    background_tasks: BackgroundTasks,
     file: UploadFile,
     title: Annotated[str, Form()],
     installation_id: Annotated[UUID, Form()],
     metadata: Annotated[str | None, Form(examples=["{}"])] = None,
 ) -> DocumentOut:
-    """Сохраняет файл и запись со статусом PENDING. Индексации нет."""
+    """Сохраняет файл как PENDING и ставит индексацию в фон."""
     logger.info(
         "загрузка title=%s installation_id=%s filename=%s",
         title,
@@ -127,6 +128,7 @@ async def upload_document_route(
         document.id,
         document.status,
     )
+    _schedule_reindex(background_tasks, document.id)
     return document_to_out(document)
 
 
@@ -180,13 +182,17 @@ async def reindex_document_route(
     document.status = DocumentStatus.PENDING
     await session.commit()
     await session.refresh(document)
+    _schedule_reindex(background_tasks, document_id)
+    logger.info("реиндекс в фоне document_id=%s", document_id)
+    return document_to_out(document)
+
+
+def _schedule_reindex(background_tasks: BackgroundTasks, document_id: UUID) -> None:
     background_tasks.add_task(
         _reindex_in_background,
         document_id,
         request_id_var.get(),
     )
-    logger.info("реиндекс в фоне document_id=%s", document_id)
-    return document_to_out(document)
 
 
 async def _reindex_in_background(document_id: UUID, request_id: str) -> None:
@@ -205,6 +211,11 @@ async def _reindex_in_background(document_id: UUID, request_id: str) -> None:
         except ReindexFailedError:
             logger.warning(
                 "фоновая реиндексация не удалась document_id=%s",
+                document_id,
+            )
+        except Exception:
+            logger.exception(
+                "фоновая реиндексация упала document_id=%s",
                 document_id,
             )
     finally:

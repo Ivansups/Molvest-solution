@@ -1,6 +1,7 @@
 import { fetchAdminApi } from "@/src/lib/admin-api";
 import type { DocumentListOut } from "@/src/types/api";
 import { getApiBaseUrl } from "@/src/lib/api-base";
+import { internalTokenHeaders } from "@/src/lib/internal-token";
 
 export type ServerResult<T> =
   | { ok: true; data: T }
@@ -13,6 +14,7 @@ export async function serverFetchJson<T>(
   try {
     const response = await fetch(`${getApiBaseUrl()}${path}`, {
       cache: "no-store",
+      headers: internalTokenHeaders(),
     });
     if (!response.ok) {
       return { ok: false, message: fallback };

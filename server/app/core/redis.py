@@ -8,10 +8,11 @@ import hashlib
 import json
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Any, cast
+from typing import Any, TypedDict, cast
 
 from redis.asyncio import Redis
 
+from app.agent.state import RetrievedChunk
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -64,18 +65,44 @@ async def set_cached_embeddings(query: str, embeddings: list[list[float]]) -> No
     )
 
 
-async def get_cached_answer(query: str, kb_version: int) -> str | None:
+class CachedAnswer(TypedDict):
+    """Ответ вместе с чанками — чтобы попадание в кэш не теряло цитаты."""
+
+    answer: str
+    chunks: list[RetrievedChunk]
+
+
+def _answer_key(query: str, kb_version: int, installation_id: str) -> str:
+    """Ключ ответа скоупится инсталляцией: БЗ у каждой свои."""
+    return f"ans:{kb_version}:{installation_id}:{hash_text(query)}"
+
+
+async def get_cached_answer(
+    query: str, kb_version: int, installation_id: str
+) -> CachedAnswer | None:
     """Получает кэшированный ответ (если БЗ не менялась)."""
-    value = await _best_effort(get_redis().get, f"ans:{kb_version}:{hash_text(query)}")
-    return value if isinstance(value, str) else None
+    raw = await _best_effort(
+        get_redis().get, _answer_key(query, kb_version, installation_id)
+    )
+    if not isinstance(raw, str):
+        return None
+    return cast("CachedAnswer", json.loads(raw))
 
 
-async def set_cached_answer(query: str, answer: str, kb_version: int) -> None:
+async def set_cached_answer(
+    query: str,
+    answer: str,
+    kb_version: int,
+    *,
+    installation_id: str,
+    chunks: list[RetrievedChunk],
+) -> None:
     """Сохраняет ответ в кэш (TTL 1 час)."""
+    payload: CachedAnswer = {"answer": answer, "chunks": chunks}
     await _best_effort(
         get_redis().set,
-        f"ans:{kb_version}:{hash_text(query)}",
-        answer,
+        _answer_key(query, kb_version, installation_id),
+        json.dumps(payload),
         ex=3600,
     )
 

@@ -6,7 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends
 
-from app.api.internal_auth import require_internal_service_token
+from app.core.security import require_internal_token
 from app.db.session import SessionDep
 from app.schemas.conversations import ConversationMetrics
 from app.selectors import conversations as conversation_selectors
@@ -14,7 +14,7 @@ from app.selectors import conversations as conversation_selectors
 router = APIRouter(
     prefix="/api",
     tags=["metrics"],
-    dependencies=[Depends(require_internal_service_token)],
+    dependencies=[Depends(require_internal_token)],
 )
 
 logger = logging.getLogger(__name__)

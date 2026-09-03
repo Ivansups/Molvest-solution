@@ -1,6 +1,6 @@
 ## Purpose
 
-Storage and admin API for knowledge-base documents and chunks. Indexing and embeddings are out of scope until a later change.
+Storage and admin API for knowledge-base documents and chunks. A successful upload queues the same background indexing as reindex.
 
 ## Requirements
 
@@ -15,7 +15,7 @@ The system SHALL persist Document and Chunk rows in PostgreSQL with the fields d
 
 ### Requirement: Upload creates a pending document
 
-The system SHALL accept `POST /api/documents` as multipart form data with `file`, `title`, and `installation_id`. Optional `metadata` MAY be a JSON object string. Allowed file types are PDF, DOCX, HTML, and MD. On success the system SHALL store the file on disk, persist a Document with status `PENDING`, and SHALL NOT create chunks or embeddings.
+The system SHALL accept `POST /api/documents` as multipart form data with `file`, `title`, and `installation_id`. Optional `metadata` MAY be a JSON object string. Allowed file types are PDF, DOCX, HTML, and MD. On success the system SHALL store the file on disk, persist a Document with status `PENDING`, return `201` without waiting for embeddings, and SHALL start the same background indexing task used by reindex.
 
 #### Scenario: Upload PDF
 
@@ -26,6 +26,11 @@ The system SHALL accept `POST /api/documents` as multipart form data with `file`
 
 - **WHEN** a client uploads a DOCX with a title and installation id
 - **THEN** the API returns the document with status `PENDING` and the file is stored on disk
+
+#### Scenario: Upload starts background indexing
+
+- **WHEN** a client uploads a supported document
+- **THEN** the API returns `201` with status `PENDING` and indexing of that document is started in the background
 
 #### Scenario: Reject unsupported type
 
@@ -88,16 +93,21 @@ The system SHALL enforce uniqueness of `(installation_id, file_name)`. A second 
 - **WHEN** a document that has a file on disk is deleted
 - **THEN** the API returns 204 and the file is no longer on disk
 
-### Requirement: Reindex is a no-op reset
+### Requirement: Reindex rebuilds document chunks
 
-`POST /api/documents/{id}/reindex` SHALL set the document status to `PENDING` and SHALL NOT create, replace, or delete chunks. Calling it twice SHALL leave the document `PENDING`. A missing id SHALL return 404.
+`POST /api/documents/{id}/reindex` SHALL extract text, chunk, embed, and atomically replace the document's chunks, then set the document status to `INDEXED`. The API response SHALL include the rebuilt chunks. Calling reindex twice on the same document SHALL both succeed and leave it `INDEXED` with the new chunks. A missing or unreadable document SHALL return an error without leaving a partial state.
 
-#### Scenario: Reindex pending document
+#### Scenario: Reindex an uploaded document
 
-- **WHEN** a client calls reindex on an existing document
-- **THEN** the API returns the document with status `PENDING`
+- **WHEN** a client calls reindex on an existing document with readable content
+- **THEN** the API returns the document with status `INDEXED` and its rebuilt chunks
 
 #### Scenario: Reindex is idempotent
 
 - **WHEN** a client calls reindex twice on the same document
-- **THEN** both calls succeed and the document status is `PENDING`
+- **THEN** both calls succeed and the document status is `INDEXED`
+
+#### Scenario: Reindex failure is surfaced
+
+- **WHEN** extraction or embedding fails during reindex
+- **THEN** the API returns an error and the document does not expose partial chunks

@@ -14,6 +14,13 @@ class RetrievedChunk(TypedDict):
     score: float
 
 
+class HistoryTurn(TypedDict):
+    """Короткая реплика из сохранённого диалога."""
+
+    role: str
+    content: str
+
+
 class AgentState(TypedDict, total=False):
     """Накапливаемое состояние одного хода графа."""
 
@@ -22,7 +29,9 @@ class AgentState(TypedDict, total=False):
     installation_id: str | None
     query: str
     intent: Intent
+    history: list[HistoryTurn]
     chunks: list[RetrievedChunk]
+    kb_version: int
     answer: str
     confidence: float
     escalated: bool
