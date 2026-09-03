@@ -39,13 +39,15 @@ async def list_documents(
 async def get_document(
     session: AsyncSession,
     document_id: UUID,
-    *,
-    installation_id: UUID | None = None,
+    installation_id: UUID,
 ) -> Document | None:
-    """Документ с чанками или None. installation_id ограничивает установкой."""
-    filters = [Document.id == document_id]
-    if installation_id is not None:
-        filters.append(Document.installation_id == installation_id)
-
-    stmt = select(Document).options(selectinload(Document.chunks)).where(*filters)
+    """Документ с чанками в границах установки или None."""
+    stmt = (
+        select(Document)
+        .options(selectinload(Document.chunks))
+        .where(
+            Document.id == document_id,
+            Document.installation_id == installation_id,
+        )
+    )
     return (await session.scalars(stmt)).first()

@@ -119,11 +119,10 @@ async def upload_document(
 async def delete_document(
     session: AsyncSession,
     document_id: UUID,
-    *,
-    installation_id: UUID | None = None,
+    installation_id: UUID,
 ) -> None:
     """Удаляет документ (чанки каскадом) и файл, если он есть."""
-    document = await get_document(session, document_id, installation_id=installation_id)
+    document = await get_document(session, document_id, installation_id)
     if document is None:
         raise DocumentNotFoundError(document_id)
     path = _path_from_metadata(document)
@@ -138,12 +137,13 @@ async def delete_document(
 async def reindex_document(
     session: AsyncSession,
     document_id: UUID,
+    installation_id: UUID,
     *,
     llm: GigaChatService | None = None,
     app_settings: Settings | None = None,
 ) -> Document:
     """Индексирует документ: чанкит, эмбеддит и заменяет старые чанки."""
-    document = await get_document(session, document_id)
+    document = await get_document(session, document_id, installation_id)
     if document is None:
         raise DocumentNotFoundError(document_id)
     logger.info("реиндекс сервиса document_id=%s", document_id)
