@@ -38,15 +38,21 @@ import { Textarea } from "@/src/components/ui/textarea";
 import type { ConversationMessage, UserSession } from "@/src/types/domain";
 import { useToast } from "@/src/hooks/use-toast";
 import { formatDateTime } from "@/src/lib/format";
+import { fileToCompressedBase64 } from "@/src/lib/image";
+import { DEFAULT_INSTALLATION_ID } from "@/src/lib/installation";
 import { chatService } from "@/src/services/chat-service";
 
-async function fileToDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error("Не удалось прочитать файл"));
-    reader.readAsDataURL(file);
-  });
+async function attachScreenshot(file: File): Promise<{
+  name: string;
+  previewUrl: string;
+  base64: string;
+}> {
+  const base64 = await fileToCompressedBase64(file);
+  return {
+    name: file.name,
+    previewUrl: URL.createObjectURL(file),
+    base64,
+  };
 }
 
 export function ChatPage({
@@ -104,7 +110,7 @@ export function ChatPage({
       }
 
       const guestUserId = `guest-${guestConversationId ?? "session"}`;
-      const workspaceId = user?.installationId ?? "guest-workspace-molvest";
+      const workspaceId = user?.installationId ?? DEFAULT_INSTALLATION_ID;
 
       return chatService.sendMessage(
         {
@@ -112,7 +118,7 @@ export function ChatPage({
           workspace_id: workspaceId,
           conversation_id: selectedId,
           text: draft.trim() || null,
-          image_base64: pendingImage?.base64.split(",")[1] ?? null,
+          image_base64: pendingImage?.base64 ?? null,
           user_id: user?.id ?? guestUserId,
         },
       );
@@ -293,12 +299,7 @@ export function ChatPage({
               description="Поддерживаются PNG и JPEG."
               fileName={pendingImage?.name}
               onFileSelect={async (file) => {
-                const dataUrl = await fileToDataUrl(file);
-                setPendingImage({
-                  name: file.name,
-                  previewUrl: dataUrl,
-                  base64: dataUrl,
-                });
+                setPendingImage(await attachScreenshot(file));
                 setImageDialogOpen(false);
               }}
             />
@@ -496,12 +497,7 @@ export function ChatPage({
             description="Поддерживаются PNG и JPEG."
             fileName={pendingImage?.name}
             onFileSelect={async (file) => {
-              const dataUrl = await fileToDataUrl(file);
-              setPendingImage({
-                name: file.name,
-                previewUrl: dataUrl,
-                base64: dataUrl,
-              });
+              setPendingImage(await attachScreenshot(file));
               setImageDialogOpen(false);
             }}
           />

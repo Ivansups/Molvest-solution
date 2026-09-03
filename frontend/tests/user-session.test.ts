@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_INSTALLATION_ID } from "@/src/lib/installation";
 import { parseUserSession } from "@/src/lib/user-session";
 
 const valid = {
@@ -6,7 +7,7 @@ const valid = {
   name: "Анна",
   email: "operator@molvest.ru",
   role: "operator" as const,
-  installationId: "7c77cfdc-2806-4e0f-a95f-c98d7a5b2f11",
+  installationId: DEFAULT_INSTALLATION_ID,
 };
 
 describe("parseUserSession", () => {
