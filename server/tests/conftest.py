@@ -29,7 +29,6 @@ TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL",
     "postgresql+asyncpg://postgres:postgres@localhost:5432/molvest",
 )
-TEST_INTERNAL_SERVICE_TOKEN = "test-internal-service-token"
 
 
 @pytest.fixture
@@ -105,11 +104,6 @@ async def api_client(
     monkeypatch: pytest.MonkeyPatch,
 ) -> AsyncIterator[AsyncClient]:
     monkeypatch.setattr(settings, "upload_dir", str(tmp_path / "uploads"))
-    monkeypatch.setattr(
-        settings,
-        "internal_service_token",
-        TEST_INTERNAL_SERVICE_TOKEN,
-    )
 
     async def override_session() -> AsyncIterator[AsyncSession]:
         yield db_session
@@ -117,6 +111,5 @@ async def api_client(
     app.dependency_overrides[get_session] = override_session
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        client.headers["Authorization"] = f"Bearer {TEST_INTERNAL_SERVICE_TOKEN}"
         yield client
     app.dependency_overrides.clear()

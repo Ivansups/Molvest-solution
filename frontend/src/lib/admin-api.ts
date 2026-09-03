@@ -1,11 +1,12 @@
 import "server-only";
 
-import { auth } from "@/auth";
 import { getApiBaseUrl } from "@/src/lib/api-base";
 import { toUserSession } from "@/src/lib/auth-user";
+import { INTERNAL_TOKEN_HEADER } from "@/src/lib/internal-token";
 import type { UserSession } from "@/src/types/domain";
 
 export async function requireAuthenticatedUser(): Promise<UserSession | null> {
+  const { auth } = await import("@/auth");
   return toUserSession(await auth());
 }
 
@@ -23,8 +24,7 @@ export async function fetchAdminApi(
 ): Promise<Response> {
   const headers = new Headers(init?.headers);
   const token = getInternalServiceToken();
-  headers.set("Authorization", `Bearer ${token}`);
-  headers.set("X-Internal-Service-Token", token);
+  headers.set(INTERNAL_TOKEN_HEADER, token);
 
   return fetch(`${getApiBaseUrl()}${path}`, {
     ...init,
