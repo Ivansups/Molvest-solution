@@ -115,6 +115,8 @@ make install        # uv sync + pnpm install
 | `make fmt` | автоформат Python |
 | `make clean` | `compose down -v` — **удаляет тома Postgres, Redis и UI** |
 
+Линтеры, тесты и сборка Docker-образов автоматически прогоняются в GitHub Actions на каждый PR и push в main (`.github/workflows/ci.yml`).
+
 Миграции гоняет entrypoint контейнера API перед uvicorn. `make up` не завершится, пока `/health` не ответит (схема уже на месте). `make migrate` нужен, только если применили новую ревизию без перезапуска контейнера.
 
 ## Два способа гонять API
