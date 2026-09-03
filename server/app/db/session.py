@@ -1,7 +1,9 @@
 """Асинхронный движок и зависимость сессии для FastAPI."""
 
 from collections.abc import AsyncIterator
+from typing import Annotated
 
+from fastapi import Depends
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -18,3 +20,6 @@ async def get_session() -> AsyncIterator[AsyncSession]:
     """Отдаёт сессию на запрос и закрывает её после ответа."""
     async with SessionLocal() as session:
         yield session
+
+
+SessionDep = Annotated[AsyncSession, Depends(get_session)]
