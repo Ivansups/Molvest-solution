@@ -1,11 +1,15 @@
 """Единый JSON-ответ на ошибки FastAPI."""
 
+import logging
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.logging import request_id_var
+
+logger = logging.getLogger(__name__)
 
 
 def error_envelope(
@@ -14,7 +18,7 @@ def error_envelope(
     detail: str,
     status_code: int,
 ) -> JSONResponse:
-    """JSON с error, detail и request_id плюс заголовок x-request-id."""
+    """Собирает {error, detail, request_id} и дублирует id в заголовок."""
     request_id = request_id_var.get()
     return JSONResponse(
         status_code=status_code,
@@ -24,7 +28,7 @@ def error_envelope(
 
 
 def register_error_handlers(app: FastAPI) -> None:
-    """Вешает обработчики HTTP, валидации и непойманных исключений."""
+    """HTTP и валидация — в конверт; 500 логирует стек, клиенту его не отдаёт."""
 
     @app.exception_handler(StarletteHTTPException)
     async def http_error(request: Request, exc: StarletteHTTPException) -> JSONResponse:
@@ -49,7 +53,8 @@ def register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def internal_error(request: Request, exc: Exception) -> JSONResponse:
-        del request, exc
+        del request
+        logger.exception("непойманное исключение", exc_info=exc)
         return error_envelope(
             error="internal_error",
             detail="Внутренняя ошибка сервера",

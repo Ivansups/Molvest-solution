@@ -9,7 +9,7 @@ export async function fileToCompressedBase64(file: File): Promise<string> {
   canvas.height = height;
   const context = canvas.getContext("2d");
   if (!context) {
-    return dataUrl.split(",")[1] ?? "";
+    throw new Error("Не удалось сжать изображение");
   }
   context.drawImage(bitmap, 0, 0, width, height);
   const compressed = canvas.toDataURL("image/jpeg", 0.85);

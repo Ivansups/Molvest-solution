@@ -54,7 +54,7 @@ def build_graph(
 
 
 async def _lookup_cached_answer(state: AgentState) -> dict[str, object]:
-    """Читает кэш ответа до retrieve. Промах — пустой патч."""
+    """Читает кэш ответа до retrieve."""
     query = state.get("query") or ""
     kb_ver = await get_kb_version()
     cached = await get_cached_answer(query, kb_ver)
@@ -70,11 +70,11 @@ async def _generate_and_cache(
 ) -> dict[str, object]:
     """Генерация и запись кэша. Сюда попадаем только без эскалации."""
     result = await generate(state, llm=llm)
-    answer = result.get("answer") or ""
+    answer = result.get("answer")
     query = state.get("query") or ""
-    if answer and query:
+    if isinstance(answer, str) and answer and query:
         kb_ver = await get_kb_version()
-        await set_cached_answer(query, str(answer), kb_ver)
+        await set_cached_answer(query, answer, kb_ver)
         logger.info("кэш ответа записан kb_version=%s", kb_ver)
     return result
 
@@ -100,11 +100,7 @@ def _after_classify(
 
 
 def _after_cache(state: AgentState) -> Literal["retrieve", "__end__"]:
-    if state.get("answer"):
-        logger.info("после кэша попадание → конец")
-        return "__end__"
-    logger.info("после кэша промах → retrieve")
-    return "retrieve"
+    return "__end__" if state.get("answer") else "retrieve"
 
 
 def _after_retrieve(state: AgentState) -> Literal["generate", "__end__"]:

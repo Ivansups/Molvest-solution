@@ -128,11 +128,7 @@ async def upload_document_route(
         document.id,
         document.status,
     )
-    background_tasks.add_task(
-        _reindex_in_background,
-        document.id,
-        request_id_var.get(),
-    )
+    _schedule_reindex(background_tasks, document.id)
     return document_to_out(document)
 
 
@@ -186,13 +182,17 @@ async def reindex_document_route(
     document.status = DocumentStatus.PENDING
     await session.commit()
     await session.refresh(document)
+    _schedule_reindex(background_tasks, document_id)
+    logger.info("реиндекс в фоне document_id=%s", document_id)
+    return document_to_out(document)
+
+
+def _schedule_reindex(background_tasks: BackgroundTasks, document_id: UUID) -> None:
     background_tasks.add_task(
         _reindex_in_background,
         document_id,
         request_id_var.get(),
     )
-    logger.info("реиндекс в фоне document_id=%s", document_id)
-    return document_to_out(document)
 
 
 async def _reindex_in_background(document_id: UUID, request_id: str) -> None:

@@ -13,7 +13,7 @@ export async function serverFetchJson<T>(
   try {
     const response = await fetch(`${getApiBaseUrl()}${path}`, {
       cache: "no-store",
-      headers: path === "/health" ? undefined : internalTokenHeaders(),
+      headers: internalTokenHeaders(),
     });
     if (!response.ok) {
       return { ok: false, message: fallback };

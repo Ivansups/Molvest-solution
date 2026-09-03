@@ -5,6 +5,7 @@ import type {
   DocumentStatus,
   FileType,
 } from "@/src/types/api";
+import { DEFAULT_INSTALLATION_ID } from "@/src/lib/installation";
 import type {
   ActiveTicket,
   AnalyticsData,
@@ -15,7 +16,7 @@ import type {
   SystemSettings,
 } from "@/src/types/domain";
 
-const installationId = "7c77cfdc-2806-4e0f-a95f-c98d7a5b2f11";
+const installationId = DEFAULT_INSTALLATION_ID;
 
 const now = "2026-09-01T10:00:00.000Z";
 

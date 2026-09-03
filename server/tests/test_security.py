@@ -1,32 +1,33 @@
 """Проверка служебного токена и конверта ошибок."""
 
+from collections.abc import AsyncIterator
 from uuid import UUID, uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.core.config import settings
+from app.db.session import get_session
 from app.main import app
 from app.schemas.chat import ChatRequest, ChatResponse
 
-_CHAT_BODY = {
-    "message_id": "11111111-1111-1111-1111-111111111111",
-    "workspace_id": "demo",
-    "conversation_id": None,
-    "text": "Как провести документ?",
-    "image_base64": None,
-    "user_id": "u1",
-}
+
+async def _override_session() -> AsyncIterator[None]:
+    yield None
 
 
 @pytest.mark.asyncio
 async def test_chat_requires_token_when_configured(
     monkeypatch: pytest.MonkeyPatch,
+    chat_request: ChatRequest,
 ) -> None:
     monkeypatch.setattr(settings, "internal_service_token", "secret")
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post("/chat", json=_CHAT_BODY)
+        response = await client.post(
+            "/chat",
+            json=chat_request.model_dump(mode="json"),
+        )
     assert response.status_code == 401
     body = response.json()
     assert body["error"] == "http_error"
@@ -47,7 +48,10 @@ async def test_health_stays_public_when_token_configured(
 
 
 @pytest.mark.asyncio
-async def test_empty_token_skips_check(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_empty_token_skips_check(
+    monkeypatch: pytest.MonkeyPatch,
+    chat_request: ChatRequest,
+) -> None:
     monkeypatch.setattr(settings, "internal_service_token", "")
 
     async def fake_run(request: ChatRequest, session: object) -> ChatResponse:
@@ -61,16 +65,26 @@ async def test_empty_token_skips_check(monkeypatch: pytest.MonkeyPatch) -> None:
             sources=[],
         )
 
+    app.dependency_overrides[get_session] = _override_session
     monkeypatch.setattr("app.api.chat.run_chat_turn", fake_run)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post("/chat", json=_CHAT_BODY)
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/chat",
+                json=chat_request.model_dump(mode="json"),
+            )
+    finally:
+        app.dependency_overrides.clear()
     assert response.status_code == 200
     assert response.json()["text"] == "ок"
 
 
 @pytest.mark.asyncio
-async def test_valid_token_is_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_valid_token_is_accepted(
+    monkeypatch: pytest.MonkeyPatch,
+    chat_request: ChatRequest,
+) -> None:
     monkeypatch.setattr(settings, "internal_service_token", "secret")
 
     async def fake_run(request: ChatRequest, session: object) -> ChatResponse:
@@ -84,14 +98,18 @@ async def test_valid_token_is_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
             sources=[],
         )
 
+    app.dependency_overrides[get_session] = _override_session
     monkeypatch.setattr("app.api.chat.run_chat_turn", fake_run)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post(
-            "/chat",
-            json=_CHAT_BODY,
-            headers={"X-Internal-Token": "secret"},
-        )
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/chat",
+                json=chat_request.model_dump(mode="json"),
+                headers={"X-Internal-Token": "secret"},
+            )
+    finally:
+        app.dependency_overrides.clear()
     assert response.status_code == 200
 
 

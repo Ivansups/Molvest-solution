@@ -69,7 +69,7 @@ async def list_recent_messages(
     session: AsyncSession,
     conversation_id: UUID,
     *,
-    limit: int = 4,
+    limit: int,
 ) -> list[Message]:
     """Последние реплики диалога в хронологическом порядке."""
     stmt = (

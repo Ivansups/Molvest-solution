@@ -18,53 +18,46 @@ _OFF_TOPIC_REPLY = (
 )
 
 _GREETING_RE = (
-    r"\b(привет|здравствуй|спасибо|пожалуйста|добрый|доброе|доброе утро|"
+    r"\b(привет|здравствуй|здравствуйте|спасибо|пожалуйста|добрый|доброе|доброе утро|"
     r"добрый день|добрый вечер|пока|до свидания|hello|hi|thanks|bye)\b"
 )
 
+# Только левая граница слова: элементы — основы, а не целые слова, поэтому
+# закрывающий \b обрезал бы «ошибка», «настройки», «зарплата» и т.п.
 _SUPPORT_RE = (
-    r"\b(1с|учёт|учет|система|конфигурация|ошибк|проблем|"
+    r"\b(1с|учёт|учет|систем|конфигурац|ошибк|проблем|"
     r"не работа|не запуска|не открывается|не записывает|не проводит|"
     r"документ|справочник|отчёт|отчет|настройк|обновлен|регистр|"
     r"запрос|блокировк|права|роль|erp|бухгалтер|"
-    r"калькуляц|себестоимост|зарплат|кадр)\b"
+    r"калькуляц|себестоимост|зарплат|кадр)"
 )
 
 
-async def classify(state: AgentState, *, llm: object = None) -> dict[str, object]:  # noqa: ARG001
+def _canned(query: str, intent: str, answer: str) -> dict[str, object]:
+    return {
+        "query": query,
+        "intent": intent,
+        "answer": answer,
+        "confidence": 1.0,
+        "escalated": False,
+    }
+
+
+async def classify(state: AgentState) -> dict[str, object]:
     """Определяет intent по правилам (без LLM). Support важнее приветствия."""
     query = (state.get("query") or "").strip()
     if not query:
         logger.info("classify intent=empty")
-        return {
-            "query": "",
-            "intent": "empty",
-            "answer": _EMPTY_REPLY,
-            "confidence": 1.0,
-            "escalated": False,
-        }
+        return _canned("", "empty", _EMPTY_REPLY)
 
     lower = query.lower()
     if re.search(_SUPPORT_RE, lower):
-        intent = "support"
-        logger.info("classify intent=%s query=%s", intent, preview(query))
-        return {"query": query, "intent": intent}
+        logger.info("classify intent=support query=%s", preview(query))
+        return {"query": query, "intent": "support"}
 
     if re.search(_GREETING_RE, lower):
         logger.info("classify intent=greeting query=%s", preview(query))
-        return {
-            "query": query,
-            "intent": "greeting",
-            "answer": _GREETING_REPLY,
-            "confidence": 1.0,
-            "escalated": False,
-        }
+        return _canned(query, "greeting", _GREETING_REPLY)
 
     logger.info("classify intent=off_topic query=%s", preview(query))
-    return {
-        "query": query,
-        "intent": "off_topic",
-        "answer": _OFF_TOPIC_REPLY,
-        "confidence": 1.0,
-        "escalated": False,
-    }
+    return _canned(query, "off_topic", _OFF_TOPIC_REPLY)
