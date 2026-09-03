@@ -1,5 +1,12 @@
 import { getApiBaseUrl } from "@/src/lib/api-base";
-import { internalTokenHeaders } from "@/src/lib/internal-token";
+import {
+  INTERNAL_TOKEN_HEADER,
+  internalTokenHeaders,
+} from "@/src/lib/internal-token";
+import { getSession } from "@/src/lib/session";
+
+/** Гостевой чат и health доступны без сессии, всё остальное — только админке. */
+const PUBLIC_PATHS = new Set(["chat", "health"]);
 
 const HOP = new Set([
   "connection",
@@ -29,10 +36,17 @@ async function proxy(
   context: { params: Promise<{ path: string[] }> },
 ): Promise<Response> {
   const { path } = await context.params;
+  const route = path.join("/");
+  if (!PUBLIC_PATHS.has(route) && !(await getSession())) {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
+
   const incoming = new URL(request.url);
-  const target = `${getApiBaseUrl()}/${path.join("/")}${incoming.search}`;
+  const target = `${getApiBaseUrl()}/${route}${incoming.search}`;
 
   const headers = copyHopSafe(request.headers);
+  // Служебный токен ставит только прокси — присланный браузером не в счёт.
+  headers.delete(INTERNAL_TOKEN_HEADER);
   for (const [key, value] of Object.entries(internalTokenHeaders())) {
     headers.set(key, value);
   }

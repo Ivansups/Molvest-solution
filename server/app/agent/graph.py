@@ -53,16 +53,37 @@ def build_graph(
     return builder.compile()
 
 
+def _cache_scope(state: AgentState) -> str | None:
+    """Инсталляция, в которой ход можно кэшировать, иначе None.
+
+    Кэш общий для всех пользователей инсталляции и ключуется текстом вопроса,
+    поэтому ход с историей диалога в него не попадает: такой ответ осмыслен
+    только внутри своего диалога.
+    """
+    installation_id = state.get("installation_id")
+    if not installation_id or state.get("history"):
+        return None
+    return installation_id
+
+
 async def _lookup_cached_answer(state: AgentState) -> dict[str, object]:
-    """Читает кэш ответа до retrieve."""
+    """Читает кэш ответа до retrieve, попутно фиксируя версию БЗ в состоянии."""
+    scope = _cache_scope(state)
+    if scope is None:
+        return {}
     query = state.get("query") or ""
     kb_ver = await get_kb_version()
-    cached = await get_cached_answer(query, kb_ver)
+    cached = await get_cached_answer(query, kb_ver, scope)
     if cached is None:
         logger.info("кэш ответа промах kb_version=%s", kb_ver)
-        return {}
+        return {"kb_version": kb_ver}
     logger.info("кэш ответа попадание kb_version=%s", kb_ver)
-    return {"answer": cached, "confidence": 1.0, "escalated": False}
+    return {
+        "answer": cached["answer"],
+        "chunks": cached["chunks"],
+        "confidence": 1.0,
+        "escalated": False,
+    }
 
 
 async def _generate_and_cache(
@@ -72,9 +93,17 @@ async def _generate_and_cache(
     result = await generate(state, llm=llm)
     answer = result.get("answer")
     query = state.get("query") or ""
-    if isinstance(answer, str) and answer and query:
-        kb_ver = await get_kb_version()
-        await set_cached_answer(query, answer, kb_ver)
+    scope = _cache_scope(state)
+    if isinstance(answer, str) and answer and query and scope is not None:
+        # версию БЗ уже прочитал lookup_cache — второй раз в Redis не ходим
+        kb_ver = state["kb_version"]
+        await set_cached_answer(
+            query,
+            answer,
+            kb_ver,
+            installation_id=scope,
+            chunks=state.get("chunks") or [],
+        )
         logger.info("кэш ответа записан kb_version=%s", kb_ver)
     return result
 

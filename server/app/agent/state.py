@@ -31,6 +31,7 @@ class AgentState(TypedDict, total=False):
     intent: Intent
     history: list[HistoryTurn]
     chunks: list[RetrievedChunk]
+    kb_version: int
     answer: str
     confidence: float
     escalated: bool

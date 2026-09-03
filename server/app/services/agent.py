@@ -55,7 +55,7 @@ async def run_chat_turn(
         conversation_id=request.conversation_id,
         installation_id=installation_id,
         user_id=request.user_id,
-        user_text=request.text,
+        user_text=_user_content(request, final),
         user_image=None,
         assistant_content=text,
         confidence=confidence,
@@ -71,6 +71,19 @@ async def run_chat_turn(
         escalated=escalated,
         sources=sources,
     )
+
+
+def _user_content(request: ChatRequest, final: dict[str, object]) -> str | None:
+    """Реплика пользователя для БД — `query`, а не сырой текст.
+
+    `query` после vision содержит описание скриншота, а сам скриншот не
+    сохраняется: `Message.image_url` рассчитан на ссылку, а не на base64.
+    Без описания у сообщения с одной картинкой не осталось бы содержимого.
+    """
+    query = final.get("query")
+    if isinstance(query, str) and query:
+        return query
+    return request.text
 
 
 async def _load_history(

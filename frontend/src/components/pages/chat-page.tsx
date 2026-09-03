@@ -38,21 +38,17 @@ import { Textarea } from "@/src/components/ui/textarea";
 import type { ConversationMessage, UserSession } from "@/src/types/domain";
 import { useToast } from "@/src/hooks/use-toast";
 import { formatDateTime } from "@/src/lib/format";
-import { fileToCompressedBase64 } from "@/src/lib/image";
+import { dataUrlToBase64, fileToCompressedDataUrl } from "@/src/lib/image";
 import { DEFAULT_INSTALLATION_ID } from "@/src/lib/installation";
 import { chatService } from "@/src/services/chat-service";
 
 async function attachScreenshot(file: File): Promise<{
   name: string;
   previewUrl: string;
-  base64: string;
 }> {
-  const base64 = await fileToCompressedBase64(file);
-  return {
-    name: file.name,
-    previewUrl: URL.createObjectURL(file),
-    base64,
-  };
+  // data-URL, а не createObjectURL: превью переезжает в историю сообщений,
+  // где revokeObjectURL уже негде вызвать.
+  return { name: file.name, previewUrl: await fileToCompressedDataUrl(file) };
 }
 
 export function ChatPage({
@@ -76,7 +72,6 @@ export function ChatPage({
   const [pendingImage, setPendingImage] = useState<{
     name: string;
     previewUrl: string;
-    base64: string;
   } | null>(null);
 
   const isSupportMode = mode === "support";
@@ -118,7 +113,7 @@ export function ChatPage({
           workspace_id: workspaceId,
           conversation_id: selectedId,
           text: draft.trim() || null,
-          image_base64: pendingImage?.base64 ?? null,
+          image_base64: pendingImage ? dataUrlToBase64(pendingImage.previewUrl) : null,
           user_id: user?.id ?? guestUserId,
         },
       );

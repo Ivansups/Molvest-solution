@@ -1,6 +1,7 @@
 const MAX_SIDE = 1024;
 
-export async function fileToCompressedBase64(file: File): Promise<string> {
+/** Сжатый скриншот как data-URL: годится и для превью, и (без префикса) для API. */
+export async function fileToCompressedDataUrl(file: File): Promise<string> {
   const dataUrl = await readAsDataUrl(file);
   const bitmap = await loadImage(dataUrl);
   const { width, height } = fitWithin(bitmap.width, bitmap.height, MAX_SIDE);
@@ -12,8 +13,11 @@ export async function fileToCompressedBase64(file: File): Promise<string> {
     throw new Error("Не удалось сжать изображение");
   }
   context.drawImage(bitmap, 0, 0, width, height);
-  const compressed = canvas.toDataURL("image/jpeg", 0.85);
-  return compressed.split(",")[1] ?? "";
+  return canvas.toDataURL("image/jpeg", 0.85);
+}
+
+export function dataUrlToBase64(dataUrl: string): string {
+  return dataUrl.split(",")[1] ?? "";
 }
 
 function readAsDataUrl(file: File): Promise<string> {

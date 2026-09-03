@@ -19,6 +19,9 @@ from app.core.config import Settings
 from app.schemas.chat import ChatRequest
 from app.services.agent import run_chat_turn
 
+_INSTALLATION_ID = "7c77cfdc-2806-4e0f-a95f-c98d7a5b2f11"
+_OTHER_INSTALLATION_ID = "0e3a0f4a-0000-4000-8000-000000000002"
+
 
 def _state(**overrides: object) -> AgentState:
     base: AgentState = {
@@ -33,6 +36,38 @@ def _state(**overrides: object) -> AgentState:
     }
     base.update(overrides)  # type: ignore[typeddict-item]
     return base
+
+
+def _chunk(score: float, document_id: int = 1) -> RetrievedChunk:
+    return RetrievedChunk(
+        document_id=str(UUID(int=document_id)),
+        title="Инструкция",
+        chunk_text="провести документ в 1С",
+        score=score,
+    )
+
+
+async def _hit_retriever(state: AgentState) -> list[RetrievedChunk]:
+    """Ретривал выше порога уверенности — граф доходит до generate."""
+    return [_chunk(0.9)]
+
+
+async def _empty_retriever(state: AgentState) -> list[RetrievedChunk]:
+    """Ничего не нашли — граф эскалирует, не вызывая generate."""
+    return []
+
+
+@pytest.fixture
+def cache_mocks(monkeypatch: pytest.MonkeyPatch) -> tuple[AsyncMock, AsyncMock]:
+    """Подменяет Redis-кэш ответа в графе, возвращает (чтение, запись)."""
+    import app.agent.graph as graph_mod
+
+    lookup = AsyncMock(return_value=None)
+    written = AsyncMock()
+    monkeypatch.setattr(graph_mod, "get_kb_version", AsyncMock(return_value=3))
+    monkeypatch.setattr(graph_mod, "get_cached_answer", lookup)
+    monkeypatch.setattr(graph_mod, "set_cached_answer", written)
+    return lookup, written
 
 
 async def test_empty_input_skips_llm(
@@ -74,18 +109,7 @@ async def test_support_retrieves_then_generates(
     llm_mock: MagicMock, app_settings: Settings
 ) -> None:
     llm_mock.generate = AsyncMock(return_value="Ответ из базы")
-
-    async def fake_retriever(state: AgentState) -> list[RetrievedChunk]:
-        return [
-            RetrievedChunk(
-                document_id=str(UUID(int=1)),
-                title="Инструкция",
-                chunk_text="провести документ в 1С",
-                score=0.9,
-            )
-        ]
-
-    graph = build_graph(llm_mock, app_settings, retriever=fake_retriever)
+    graph = build_graph(llm_mock, app_settings, retriever=_hit_retriever)
     result = await graph.ainvoke(_state())
     assert result["intent"] == "support"
     assert result["answer"] == "Ответ из базы"
@@ -99,17 +123,10 @@ async def test_support_below_threshold_escalates_without_generate(
 ) -> None:
     llm_mock.generate = AsyncMock(return_value="никогда не вызван")
 
-    async def fake_retriever(state: AgentState) -> list[RetrievedChunk]:
-        return [
-            RetrievedChunk(
-                document_id=str(UUID(int=2)),
-                title="Инструкция",
-                chunk_text="что-то не по делу",
-                score=0.4,
-            )
-        ]
+    async def low_score_retriever(state: AgentState) -> list[RetrievedChunk]:
+        return [_chunk(0.4, document_id=2)]
 
-    graph = build_graph(llm_mock, app_settings, retriever=fake_retriever)
+    graph = build_graph(llm_mock, app_settings, retriever=low_score_retriever)
     result = await graph.ainvoke(_state())
     assert result["escalated"] is True
     assert result["confidence"] == 0.4
@@ -120,10 +137,7 @@ async def test_support_below_threshold_escalates_without_generate(
 async def test_support_no_chunks_escalates_without_generate(
     llm_mock: MagicMock, app_settings: Settings
 ) -> None:
-    async def fake_retriever(state: AgentState) -> list[RetrievedChunk]:
-        return []
-
-    graph = build_graph(llm_mock, app_settings, retriever=fake_retriever)
+    graph = build_graph(llm_mock, app_settings, retriever=_empty_retriever)
     result = await graph.ainvoke(_state())
     assert result["escalated"] is True
     assert result["confidence"] == 0.0
@@ -153,6 +167,24 @@ async def test_classify_rules() -> None:
     assert empty["answer"] == _EMPTY_REPLY
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "ошибка при проведении накладной",
+        "проблема с отчетом по НДС",
+        "настройки не сохраняются",
+        "обновление конфигурации упало",
+        "зарплата не начисляется",
+        "не проводится накладная",
+        "блокировка при записи документа",
+        "здравствуйте, не открывается 1с",
+    ],
+)
+async def test_classify_matches_word_forms(query: str) -> None:
+    """Элементы _SUPPORT_RE — основы: словоформы не должны уходить в off_topic."""
+    assert (await classify({"query": query}))["intent"] == "support"
+
+
 async def test_run_chat_turn_maps_contract_and_persists(
     monkeypatch: pytest.MonkeyPatch,
     chat_request: ChatRequest,
@@ -169,10 +201,7 @@ async def test_run_chat_turn_maps_contract_and_persists(
     from app.models.escalation import Escalation
     from app.models.message import Message
 
-    async def fake_retriever(state: AgentState) -> list[RetrievedChunk]:
-        return []
-
-    graph = build_graph(llm_mock, app_settings, retriever=fake_retriever)
+    graph = build_graph(llm_mock, app_settings, retriever=_empty_retriever)
     monkeypatch.setattr(agent_service, "get_graph", lambda: graph)
 
     response = await run_chat_turn(chat_request, db_session)
@@ -223,10 +252,7 @@ async def test_run_chat_turn_replay_does_not_double_escalate(
     from app.models.enums import ConversationStatus
     from app.models.escalation import Escalation
 
-    async def fake_retriever(state: AgentState) -> list[RetrievedChunk]:
-        return []
-
-    graph = build_graph(llm_mock, app_settings, retriever=fake_retriever)
+    graph = build_graph(llm_mock, app_settings, retriever=_empty_retriever)
     monkeypatch.setattr(agent_service, "get_graph", lambda: graph)
 
     first = await run_chat_turn(chat_request, db_session)
@@ -248,24 +274,63 @@ async def test_run_chat_turn_replay_does_not_double_escalate(
 
 
 async def test_cache_hit_skips_generate(
-    monkeypatch: pytest.MonkeyPatch,
+    cache_mocks: tuple[AsyncMock, AsyncMock],
     llm_mock: MagicMock,
     app_settings: Settings,
 ) -> None:
-    import app.agent.graph as graph_mod
+    lookup, _ = cache_mocks
+    chunk = _chunk(0.9)
+    lookup.return_value = {"answer": "из кэша", "chunks": [chunk]}
 
-    monkeypatch.setattr(graph_mod, "get_kb_version", AsyncMock(return_value=3))
-    monkeypatch.setattr(
-        graph_mod, "get_cached_answer", AsyncMock(return_value="из кэша")
-    )
-
-    async def fake_retriever(state: AgentState) -> list[RetrievedChunk]:
+    async def forbidden_retriever(state: AgentState) -> list[RetrievedChunk]:
         raise AssertionError("retrieve не должен вызываться")
 
-    graph = build_graph(llm_mock, app_settings, retriever=fake_retriever)
-    result = await graph.ainvoke(_state())
+    graph = build_graph(llm_mock, app_settings, retriever=forbidden_retriever)
+    result = await graph.ainvoke(_state(installation_id=_INSTALLATION_ID))
     assert result["answer"] == "из кэша"
+    # цитаты приходят вместе с ответом, иначе на попадании их бы не было
+    assert result["chunks"] == [chunk]
     llm_mock.generate.assert_not_called()
+    assert lookup.await_args is not None
+    assert lookup.await_args.args[2] == _INSTALLATION_ID
+
+
+async def test_cache_key_is_scoped_to_installation(
+    cache_mocks: tuple[AsyncMock, AsyncMock],
+    llm_mock: MagicMock,
+    app_settings: Settings,
+) -> None:
+    _, written = cache_mocks
+    llm_mock.generate = AsyncMock(return_value="Ответ из базы")
+
+    graph = build_graph(llm_mock, app_settings, retriever=_hit_retriever)
+    await graph.ainvoke(_state(installation_id=_OTHER_INSTALLATION_ID))
+
+    assert written.await_args is not None
+    assert written.await_args.kwargs["installation_id"] == _OTHER_INSTALLATION_ID
+
+
+async def test_history_turn_bypasses_answer_cache(
+    cache_mocks: tuple[AsyncMock, AsyncMock],
+    llm_mock: MagicMock,
+    app_settings: Settings,
+) -> None:
+    """Ответ по истории диалога нельзя ни отдать, ни записать в общий кэш."""
+    lookup, written = cache_mocks
+    lookup.return_value = {"answer": "из кэша", "chunks": []}
+    llm_mock.generate = AsyncMock(return_value="Ответ из базы")
+
+    graph = build_graph(llm_mock, app_settings, retriever=_hit_retriever)
+    result = await graph.ainvoke(
+        _state(
+            installation_id=_INSTALLATION_ID,
+            history=[{"role": "user", "content": "как провести документ"}],
+        )
+    )
+
+    lookup.assert_not_awaited()
+    written.assert_not_awaited()
+    assert result["answer"] != "из кэша"
 
 
 async def test_generate_includes_history(llm_mock: MagicMock) -> None:

@@ -1,5 +1,6 @@
 """Юнит-тесты обёртки GigaChat — без реальных вызовов API."""
 
+import base64
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
@@ -63,6 +64,16 @@ async def test_chat_with_vision_strips_existing_prefix() -> None:
     request = client.achat.create.await_args.args[0]
     image_part = request.messages[0].content[1]
     assert image_part.model_dump()["image_url"]["url"] == ("data:image/png;base64,ABC")
+
+
+async def test_chat_with_vision_detects_jpeg() -> None:
+    """Клиент сжимает скриншоты в JPEG — MIME берём из сигнатуры, не хардкодим."""
+    service, client = _service()
+    jpeg = base64.b64encode(b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01").decode()
+    await service.chat_with_vision(jpeg, "опиши")
+    request = client.achat.create.await_args.args[0]
+    image_part = request.messages[0].content[1]
+    assert image_part.model_dump()["image_url"]["url"].startswith("data:image/jpeg;")
 
 
 @pytest.mark.parametrize("model", ["Embeddings", "Embeddings-2"])
