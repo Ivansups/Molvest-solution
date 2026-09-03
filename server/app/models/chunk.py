@@ -13,7 +13,6 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.models.document import Document
 
-# Модель GigaChat Embeddings — 1024 координаты, не 1536 из roadmap.
 EMBEDDING_DIMENSIONS = 1024
 
 

@@ -176,7 +176,7 @@
 - `id` (UUID)
 - `document_id` (FK)
 - `content` (text)
-- `embedding` (vector(1536)) – размерность эмбеддингов GigaChat
+- `embedding` (vector(1024)) – размерность эмбеддингов GigaChat
 - `chunk_index` (int)
 
 **Conversation**

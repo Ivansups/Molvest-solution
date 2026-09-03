@@ -235,4 +235,5 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/molvest \
 | [AGENTS.md](AGENTS.md) | стек, слои, инварианты, линтеры |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | этапы и критерии готовности |
 | [docs/SCENARIOS.md](docs/SCENARIOS.md) | 4 сценария агента |
+| [docs/TESTS.md](docs/TESTS.md) | карта тестов: что гонять и что какой файл закрывает |
 | [docs/technical spec/](docs/technical%20spec/) | исходное ТЗ хакатона |
