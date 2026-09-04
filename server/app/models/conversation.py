@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, String
+from sqlalchemy import DateTime, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -43,6 +43,10 @@ class Conversation(Base):
         nullable=False,
         default=ConversationStatus.OPEN,
         index=True,
+    )
+    suggested_response: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
     )
 
     messages: Mapped[list["Message"]] = relationship(

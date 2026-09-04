@@ -90,7 +90,7 @@ def add_assistant_message(
         content=content,
         confidence=confidence,
         escalated=escalated,
-        sources=[source.model_dump() for source in sources],
+        sources=[source.model_dump(mode="json") for source in sources],
     )
 
 
@@ -115,6 +115,23 @@ def escalate_conversation(
             escalated_to=_ESCALATED_TO,
         )
         session.add(escalation)
+
+
+async def persist_guest_hold(
+    session: AsyncSession,
+    *,
+    conversation: Conversation,
+    user_text: str | None,
+    user_image: str | None,
+) -> Conversation:
+    """Пишет только реплику гостя в уже эскалированный диалог, без LLM."""
+    session.add(add_user_message(conversation, text=user_text, image_base64=user_image))
+    await session.commit()
+    logger.info(
+        "ход гостя в эскалации conversation_id=%s без ответа модели",
+        conversation.id,
+    )
+    return conversation
 
 
 async def persist_turn(

@@ -20,5 +20,8 @@ async def test_openapi_has_documents_chat_conversations_metrics() -> None:
     assert "/api/conversations" in paths
     assert "get" in paths["/api/conversations"]
     assert "/api/conversations/{conversation_id}" in paths
+    assert "post" in paths["/api/conversations/{conversation_id}/messages"]
+    assert "post" in paths["/api/conversations/{conversation_id}/resolve"]
+    assert "post" in paths["/api/conversations/{conversation_id}/suggest"]
     assert "/api/metrics" in paths
     assert "get" in paths["/api/metrics"]

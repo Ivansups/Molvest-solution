@@ -7,15 +7,30 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.graph import get_graph
 from app.agent.state import AgentState, HistoryTurn, RetrievedChunk
+from app.core.config import settings
 from app.models.conversation import Conversation
+from app.models.enums import ConversationStatus
 from app.rag.retrieval import workspace_to_installation_id
 from app.schemas.chat import ChatRequest, ChatResponse, Source
 from app.selectors.conversations import list_recent_messages
-from app.services.conversations import GUEST_ESCALATION_TEXT, persist_turn
+from app.services.conversations import (
+    GUEST_ESCALATION_TEXT,
+    persist_guest_hold,
+    persist_turn,
+)
 
 logger = logging.getLogger(__name__)
 
 _HISTORY_LIMIT = 4
+_IMAGE_HOLD_TEXT = "Пользователь отправил изображение"
+
+
+class ConversationConflictError(Exception):
+    """Диалог нельзя продолжить этим ходом (resolved или конфликт статуса)."""
+
+    def __init__(self, detail: str) -> None:
+        self.detail = detail
+        super().__init__(detail)
 
 
 async def run_chat_turn(
@@ -24,17 +39,46 @@ async def run_chat_turn(
 ) -> ChatResponse:
     """Прогоняет запрос через LangGraph, пишет диалог и мапит в контракт."""
     installation_id = workspace_to_installation_id(request.workspace_id)
-    history = await _load_history(
+    existing = await _load_conversation(
         session,
         conversation_id=request.conversation_id,
         installation_id=installation_id,
     )
+    if existing is not None and existing.status == ConversationStatus.RESOLVED:
+        raise ConversationConflictError("Диалог уже закрыт")
+    if (
+        existing is not None
+        and existing.status == ConversationStatus.ESCALATED
+        and settings.operator_assist_mode == "draft"
+    ):
+        await persist_guest_hold(
+            session,
+            conversation=existing,
+            user_text=_hold_user_text(request),
+            user_image=None,
+        )
+        logger.info(
+            "draft hold conversation_id=%s без графа",
+            existing.id,
+        )
+        return ChatResponse(
+            conversation_id=existing.id,
+            message_id=request.message_id,
+            text=GUEST_ESCALATION_TEXT,
+            confidence=0.0,
+            escalated=True,
+            sources=[],
+        )
+
+    history = await _load_history(session, existing)
     logger.info(
-        "граф старт message_id=%s installation_id=%s history=%s",
+        "граф старт message_id=%s installation_id=%s history=%s status=%s",
         request.message_id,
         installation_id,
         len(history),
+        existing.status.value if existing is not None else "open",
     )
+    await session.commit()
     final = await get_graph().ainvoke(_initial_state(request, installation_id, history))
     logger.info(
         "граф конец message_id=%s intent=%s escalated=%s confidence=%s",
@@ -44,23 +88,53 @@ async def run_chat_turn(
         final.get("confidence"),
     )
 
+    existing = await _load_conversation(
+        session,
+        conversation_id=request.conversation_id,
+        installation_id=installation_id,
+    )
+    if existing is not None and existing.status == ConversationStatus.RESOLVED:
+        raise ConversationConflictError("Диалог уже закрыт")
+
     sources = _to_sources(final.get("chunks") or [])
     escalated = bool(final.get("escalated", False))
     confidence = float(final.get("confidence", 0.0))
     answer = final.get("answer") or ""
+    user_text = _user_content(request, final)
+    if (
+        existing is not None
+        and existing.status == ConversationStatus.ESCALATED
+        and escalated
+    ):
+        await persist_guest_hold(
+            session,
+            conversation=existing,
+            user_text=user_text,
+            user_image=None,
+        )
+        return ChatResponse(
+            conversation_id=existing.id,
+            message_id=request.message_id,
+            text=GUEST_ESCALATION_TEXT,
+            confidence=confidence,
+            escalated=True,
+            sources=[],
+        )
+
     text = GUEST_ESCALATION_TEXT if escalated else answer
+    persist_sources = [] if escalated else sources
 
     persisted = await persist_turn(
         session,
         conversation_id=request.conversation_id,
         installation_id=installation_id,
         user_id=request.user_id,
-        user_text=_user_content(request, final),
+        user_text=user_text,
         user_image=None,
         assistant_content=text,
         confidence=confidence,
         escalated=escalated,
-        sources=sources,
+        sources=persist_sources,
     )
 
     return ChatResponse(
@@ -69,8 +143,17 @@ async def run_chat_turn(
         text=text,
         confidence=confidence,
         escalated=escalated,
-        sources=sources,
+        sources=persist_sources,
     )
+
+
+def _hold_user_text(request: ChatRequest) -> str | None:
+    """Текст гостя в draft-hold: без vision, картинка не пишется в image_url."""
+    if request.text and request.text.strip():
+        return request.text
+    if request.image_base64:
+        return _IMAGE_HOLD_TEXT
+    return request.text
 
 
 def _user_content(request: ChatRequest, final: dict[str, object]) -> str | None:
@@ -86,18 +169,27 @@ def _user_content(request: ChatRequest, final: dict[str, object]) -> str | None:
     return request.text
 
 
-async def _load_history(
+async def _load_conversation(
     session: AsyncSession,
     *,
     conversation_id: UUID | None,
     installation_id: UUID,
-) -> list[HistoryTurn]:
+) -> Conversation | None:
     if conversation_id is None:
-        return []
+        return None
     conversation = await session.get(Conversation, conversation_id)
     if conversation is None or conversation.installation_id != installation_id:
+        return None
+    return conversation
+
+
+async def _load_history(
+    session: AsyncSession,
+    conversation: Conversation | None,
+) -> list[HistoryTurn]:
+    if conversation is None:
         return []
-    rows = await list_recent_messages(session, conversation_id, limit=_HISTORY_LIMIT)
+    rows = await list_recent_messages(session, conversation.id, limit=_HISTORY_LIMIT)
     return [HistoryTurn(role=row.role.value, content=row.content) for row in rows]
 
 

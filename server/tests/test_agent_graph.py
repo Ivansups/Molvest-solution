@@ -235,6 +235,7 @@ async def test_run_chat_turn_maps_contract_and_persists(
     ).first()
     assert escalation is not None
     assert escalation.escalated_to
+    assert conversation.suggested_response is None
 
 
 async def test_run_chat_turn_replay_does_not_double_escalate(
@@ -351,3 +352,274 @@ async def test_generate_includes_history(llm_mock: MagicMock) -> None:
     assert "как провести документ" in prompt
     assert "нажмите Провести" in prompt
     assert "а как именно?" in prompt
+
+
+async def test_draft_hold_skips_graph(
+    monkeypatch: pytest.MonkeyPatch,
+    chat_request: ChatRequest,
+    llm_mock: MagicMock,
+    reset_graph_singleton: None,
+    db_session: AsyncSession,
+) -> None:
+    from sqlalchemy import func, select
+
+    import app.services.agent as agent_service
+    from app.models.conversation import Conversation
+    from app.models.enums import ConversationStatus, MessageRole
+    from app.models.message import Message
+    from app.services.conversation_status import transition_status
+
+    conversation = Conversation(
+        installation_id=UUID(_INSTALLATION_ID),
+        user_id="u1",
+        status=ConversationStatus.OPEN,
+    )
+    db_session.add(conversation)
+    await db_session.flush()
+    transition_status(conversation, ConversationStatus.ESCALATED)
+    db_session.add(
+        Message(
+            conversation_id=conversation.id,
+            role=MessageRole.USER,
+            content="первый вопрос",
+        )
+    )
+    conversation.suggested_response = "старый черновик"
+    await db_session.commit()
+
+    monkeypatch.setattr(
+        agent_service,
+        "get_graph",
+        lambda: (_ for _ in ()).throw(AssertionError("граф не должен вызываться")),
+    )
+    replay = chat_request.model_copy(
+        update={
+            "conversation_id": conversation.id,
+            "workspace_id": _INSTALLATION_ID,
+            "text": "уточнение",
+        }
+    )
+    response = await run_chat_turn(replay, db_session)
+    assert response.escalated is True
+    llm_mock.generate.assert_not_called()
+    user_count = await db_session.scalar(
+        select(func.count())
+        .select_from(Message)
+        .where(
+            Message.conversation_id == conversation.id,
+            Message.role == MessageRole.USER,
+        )
+    )
+    assert user_count == 2
+    assistant_count = await db_session.scalar(
+        select(func.count())
+        .select_from(Message)
+        .where(
+            Message.conversation_id == conversation.id,
+            Message.role == MessageRole.ASSISTANT,
+        )
+    )
+    assert assistant_count == 0
+    await db_session.refresh(conversation)
+    assert conversation.suggested_response == "старый черновик"
+
+
+async def test_draft_hold_image_without_text_keeps_placeholder(
+    monkeypatch: pytest.MonkeyPatch,
+    chat_request: ChatRequest,
+    llm_mock: MagicMock,
+    reset_graph_singleton: None,
+    db_session: AsyncSession,
+) -> None:
+    from sqlalchemy import select
+
+    import app.services.agent as agent_service
+    from app.models.conversation import Conversation
+    from app.models.enums import ConversationStatus, MessageRole
+    from app.models.message import Message
+    from app.services.conversation_status import transition_status
+
+    conversation = Conversation(
+        installation_id=UUID(_INSTALLATION_ID),
+        user_id="u1",
+        status=ConversationStatus.OPEN,
+    )
+    db_session.add(conversation)
+    await db_session.flush()
+    transition_status(conversation, ConversationStatus.ESCALATED)
+    await db_session.commit()
+
+    monkeypatch.setattr(
+        agent_service,
+        "get_graph",
+        lambda: (_ for _ in ()).throw(AssertionError("граф не должен вызываться")),
+    )
+    replay = chat_request.model_copy(
+        update={
+            "conversation_id": conversation.id,
+            "workspace_id": _INSTALLATION_ID,
+            "text": None,
+            "image_base64": "aaa",
+        }
+    )
+    await run_chat_turn(replay, db_session)
+    rows = list(
+        (
+            await db_session.scalars(
+                select(Message).where(
+                    Message.conversation_id == conversation.id,
+                    Message.role == MessageRole.USER,
+                )
+            )
+        ).all()
+    )
+    assert rows[-1].content == agent_service._IMAGE_HOLD_TEXT
+    assert rows[-1].image_url is None
+    llm_mock.generate.assert_not_called()
+
+
+async def test_auto_escalated_high_score_keeps_status(
+    monkeypatch: pytest.MonkeyPatch,
+    chat_request: ChatRequest,
+    llm_mock: MagicMock,
+    app_settings: Settings,
+    reset_graph_singleton: None,
+    cache_mocks: tuple[AsyncMock, AsyncMock],
+    db_session: AsyncSession,
+) -> None:
+    from sqlalchemy import func, select
+
+    import app.services.agent as agent_service
+    from app.core.config import settings
+    from app.models.conversation import Conversation
+    from app.models.enums import ConversationStatus, MessageRole
+    from app.models.message import Message
+    from app.services.conversation_status import transition_status
+
+    monkeypatch.setattr(settings, "operator_assist_mode", "auto")
+    llm_mock.generate = AsyncMock(return_value="Ответ в авто")
+    graph = build_graph(llm_mock, app_settings, retriever=_hit_retriever)
+    monkeypatch.setattr(agent_service, "get_graph", lambda: graph)
+
+    conversation = Conversation(
+        installation_id=UUID(_INSTALLATION_ID),
+        user_id="u1",
+        status=ConversationStatus.OPEN,
+    )
+    db_session.add(conversation)
+    await db_session.flush()
+    transition_status(conversation, ConversationStatus.ESCALATED)
+    await db_session.commit()
+
+    replay = chat_request.model_copy(
+        update={
+            "conversation_id": conversation.id,
+            "workspace_id": _INSTALLATION_ID,
+            "text": "как провести документ",
+        }
+    )
+    response = await run_chat_turn(replay, db_session)
+    assert response.escalated is False
+    assert response.text == "Ответ в авто"
+    await db_session.refresh(conversation)
+    assert conversation.status == ConversationStatus.ESCALATED
+    assistant_count = await db_session.scalar(
+        select(func.count())
+        .select_from(Message)
+        .where(
+            Message.conversation_id == conversation.id,
+            Message.role == MessageRole.ASSISTANT,
+        )
+    )
+    assert assistant_count == 1
+    llm_mock.generate.assert_awaited()
+    await db_session.refresh(conversation)
+    assert conversation.suggested_response is None
+
+
+async def test_auto_escalated_weak_score_skips_generate(
+    monkeypatch: pytest.MonkeyPatch,
+    chat_request: ChatRequest,
+    llm_mock: MagicMock,
+    app_settings: Settings,
+    reset_graph_singleton: None,
+    cache_mocks: tuple[AsyncMock, AsyncMock],
+    db_session: AsyncSession,
+) -> None:
+    from sqlalchemy import func, select
+
+    import app.services.agent as agent_service
+    from app.core.config import settings
+    from app.models.conversation import Conversation
+    from app.models.enums import ConversationStatus, MessageRole
+    from app.models.message import Message
+    from app.services.conversation_status import transition_status
+
+    monkeypatch.setattr(settings, "operator_assist_mode", "auto")
+    llm_mock.generate = AsyncMock(return_value="не должен")
+    graph = build_graph(llm_mock, app_settings, retriever=_empty_retriever)
+    monkeypatch.setattr(agent_service, "get_graph", lambda: graph)
+
+    conversation = Conversation(
+        installation_id=UUID(_INSTALLATION_ID),
+        user_id="u1",
+        status=ConversationStatus.OPEN,
+    )
+    db_session.add(conversation)
+    await db_session.flush()
+    transition_status(conversation, ConversationStatus.ESCALATED)
+    await db_session.commit()
+
+    replay = chat_request.model_copy(
+        update={
+            "conversation_id": conversation.id,
+            "workspace_id": _INSTALLATION_ID,
+            "text": "как провести документ",
+        }
+    )
+    response = await run_chat_turn(replay, db_session)
+    assert response.escalated is True
+    assert "оператор" in response.text
+    assert response.sources == []
+    await db_session.refresh(conversation)
+    assert conversation.status == ConversationStatus.ESCALATED
+    assistant_count = await db_session.scalar(
+        select(func.count())
+        .select_from(Message)
+        .where(
+            Message.conversation_id == conversation.id,
+            Message.role == MessageRole.ASSISTANT,
+        )
+    )
+    assert assistant_count == 0
+    llm_mock.generate.assert_not_called()
+
+
+async def test_resolved_chat_turn_rejected(
+    chat_request: ChatRequest,
+    db_session: AsyncSession,
+) -> None:
+    from app.models.conversation import Conversation
+    from app.models.enums import ConversationStatus
+    from app.services.agent import ConversationConflictError
+    from app.services.conversation_status import transition_status
+
+    conversation = Conversation(
+        installation_id=UUID(_INSTALLATION_ID),
+        user_id="u1",
+        status=ConversationStatus.OPEN,
+    )
+    db_session.add(conversation)
+    await db_session.flush()
+    transition_status(conversation, ConversationStatus.ESCALATED)
+    transition_status(conversation, ConversationStatus.RESOLVED)
+    await db_session.commit()
+
+    replay = chat_request.model_copy(
+        update={
+            "conversation_id": conversation.id,
+            "workspace_id": _INSTALLATION_ID,
+        }
+    )
+    with pytest.raises(ConversationConflictError):
+        await run_chat_turn(replay, db_session)

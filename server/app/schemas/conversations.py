@@ -42,6 +42,7 @@ class ConversationOut(BaseModel):
     user_id: str
     status: ConversationStatus
     created_at: datetime
+    suggested_response: str | None = None
 
 
 class ConversationDetailOut(ConversationOut):
@@ -58,6 +59,19 @@ class ConversationListOut(BaseModel):
     page: int
     page_size: int
     total: int
+
+
+class OperatorMessageIn(BaseModel):
+    """Ответ оператора в эскалированный диалог."""
+
+    installation_id: UUID
+    text: str = Field(min_length=1, max_length=4000)
+
+
+class OperatorActionIn(BaseModel):
+    """Resolve или suggest: достаточно installation_id."""
+
+    installation_id: UUID
 
 
 class ConversationListParams(BaseModel):
@@ -80,6 +94,7 @@ def conversation_to_out(conversation: Conversation) -> ConversationOut:
         user_id=conversation.user_id,
         status=conversation.status,
         created_at=conversation.created_at,
+        suggested_response=conversation.suggested_response,
     )
 
 
@@ -115,8 +130,12 @@ def conversation_to_detail(
     """Диалог с сообщениями и эскалациями."""
     return ConversationDetailOut(
         **conversation_to_out(conversation).model_dump(),
-        messages=[message_to_out(m) for m in messages],
-        escalations=[escalation_to_out(e) for e in escalations],
+        messages=[
+            message_to_out(m) for m in sorted(messages, key=lambda row: row.created_at)
+        ],
+        escalations=[
+            escalation_to_out(e) for e in sorted(escalations, key=lambda row: row.id)
+        ],
     )
 
 
