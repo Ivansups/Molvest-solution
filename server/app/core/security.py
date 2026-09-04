@@ -1,5 +1,6 @@
 """Проверка служебного токена Next.js → FastAPI."""
 
+import hmac
 from typing import Annotated
 
 from fastapi import Header, HTTPException, status
@@ -16,7 +17,8 @@ async def require_internal_token(
     expected = settings.internal_service_token
     if not expected:
         return
-    if x_internal_token != expected:
+    given = x_internal_token or ""
+    if len(given) != len(expected) or not hmac.compare_digest(given, expected):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Неверный служебный токен",
