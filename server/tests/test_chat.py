@@ -47,3 +47,31 @@ async def test_chat_returns_graph_result(monkeypatch: pytest.MonkeyPatch) -> Non
     assert body["text"] == "из графа"
     assert body["confidence"] == 0.91
     assert body["escalated"] is False
+
+
+async def test_chat_resolved_returns_409(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services.agent import ConversationConflictError
+
+    async def fake_run(request: ChatRequest, session: object) -> ChatResponse:
+        raise ConversationConflictError("Диалог уже закрыт")
+
+    async def override_session() -> AsyncIterator[None]:
+        yield None
+
+    app.dependency_overrides[get_session] = override_session
+    monkeypatch.setattr("app.api.chat.run_chat_turn", fake_run)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/chat",
+            json={
+                "message_id": "11111111-1111-1111-1111-111111111111",
+                "workspace_id": "demo",
+                "conversation_id": "22222222-2222-2222-2222-222222222222",
+                "text": "ещё вопрос",
+                "image_base64": None,
+                "user_id": "u1",
+            },
+        )
+    app.dependency_overrides.clear()
+    assert response.status_code == 409

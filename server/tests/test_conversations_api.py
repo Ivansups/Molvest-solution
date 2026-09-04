@@ -159,6 +159,7 @@ async def test_get_detail_returns_messages_and_escalations(
     # message_id эскалации указывает на сохранённое system-сообщение
     system = next(m for m in body["messages"] if m["role"] == "system")
     assert escalation["message_id"] == system["id"]
+    assert body["suggested_response"] is None
 
 
 async def test_get_detail_unknown_id_returns_404(
