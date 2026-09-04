@@ -47,7 +47,7 @@ function toDetail(conversation: ConversationDetailOut): ConversationDetail {
     lastMessageAt: conversation.messages.at(-1)?.created_at ?? conversation.created_at,
     priority: "medium",
     unread: 0,
-    suggestedResponse: "",
+    suggestedResponse: conversation.suggested_response ?? "",
     userProfile: { company: "", department: "", position: "", lastSeenAt: "" },
     messages: conversation.messages.map(toMessage),
   };
@@ -58,10 +58,16 @@ export const chatService = {
     installationId: string,
     page: number,
     pageSize: number,
+    status?: ConversationListItem["status"],
   ): Promise<ConversationPage> {
     try {
       const response = await apiClient.get<ConversationListOut>("/api/conversations", {
-        params: { installation_id: installationId, page, page_size: pageSize },
+        params: {
+          installation_id: installationId,
+          page,
+          page_size: pageSize,
+          ...(status ? { status } : {}),
+        },
       });
       return {
         items: response.data.items.map(toListItem),
@@ -116,6 +122,62 @@ export const chatService = {
         error,
         "Не удалось получить ответ от backend /chat.",
         "/chat",
+      );
+    }
+  },
+
+  async sendOperatorReply(
+    conversationId: string,
+    installationId: string,
+    text: string,
+  ): Promise<void> {
+    try {
+      await apiClient.post(`/api/conversations/${conversationId}/messages`, {
+        installation_id: installationId,
+        text,
+      });
+    } catch (error) {
+      throw toServiceError(
+        error,
+        "Не удалось отправить ответ оператора.",
+        `/api/conversations/${conversationId}/messages`,
+      );
+    }
+  },
+
+  async resolveConversation(
+    conversationId: string,
+    installationId: string,
+  ): Promise<void> {
+    try {
+      await apiClient.post(`/api/conversations/${conversationId}/resolve`, {
+        installation_id: installationId,
+      });
+    } catch (error) {
+      throw toServiceError(
+        error,
+        "Не удалось закрыть диалог.",
+        `/api/conversations/${conversationId}/resolve`,
+      );
+    }
+  },
+
+  async generateSuggestion(
+    conversationId: string,
+    installationId: string,
+  ): Promise<ConversationDetail> {
+    try {
+      const response = await apiClient.post<ConversationDetailOut>(
+        `/api/conversations/${conversationId}/suggest`,
+        { installation_id: installationId },
+        { timeout: 60_000 },
+      );
+      return toDetail(response.data);
+    } catch (error) {
+      throw toServiceError(
+        error,
+        "Не удалось сгенерировать черновик.",
+        `/api/conversations/${conversationId}/suggest`,
       );
     }
   },

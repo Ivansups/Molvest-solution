@@ -65,6 +65,7 @@ export interface ConversationOut {
   user_id: string;
   status: ConversationStatus;
   created_at: string;
+  suggested_response: string | null;
 }
 
 export interface EscalationOut {
@@ -91,6 +92,7 @@ export interface ConversationDetailOut {
   user_id: string;
   status: ConversationStatus;
   created_at: string;
+  suggested_response: string | null;
   messages: MessageOut[];
   escalations: EscalationOut[];
 }

@@ -9,7 +9,6 @@ import {
   Ellipsis,
   ImagePlus,
   Send,
-  ShieldAlert,
 } from "lucide-react";
 import { ApiStateCard } from "@/src/components/common/api-state-card";
 import { FileDropzone } from "@/src/components/common/file-dropzone";
@@ -35,12 +34,13 @@ import { ScrollArea } from "@/src/components/ui/scroll-area";
 import { Separator } from "@/src/components/ui/separator";
 import { Spinner } from "@/src/components/ui/spinner";
 import { Textarea } from "@/src/components/ui/textarea";
-import type { ConversationMessage, UserSession } from "@/src/types/domain";
+import type { ConversationDetail, ConversationMessage, UserSession } from "@/src/types/domain";
 import { useToast } from "@/src/hooks/use-toast";
 import { formatDateTime } from "@/src/lib/format";
 import { dataUrlToBase64, fileToCompressedDataUrl } from "@/src/lib/image";
 import { DEFAULT_INSTALLATION_ID } from "@/src/lib/installation";
 import { chatService } from "@/src/services/chat-service";
+import { ApiServiceError } from "@/src/services/service-helpers";
 
 const CONVERSATIONS_PAGE_SIZE = 50;
 
@@ -83,7 +83,7 @@ export function ChatPage({
   const conversationsQuery = useQuery({
     queryKey: ["conversations", installationId, page],
     queryFn: () =>
-      chatService.listConversations(installationId, page, CONVERSATIONS_PAGE_SIZE),
+      chatService.listConversations(installationId, page, CONVERSATIONS_PAGE_SIZE, "escalated"),
     enabled: isSupportMode,
     refetchInterval: 5_000,
   });
@@ -105,81 +105,177 @@ export function ChatPage({
   const conversationQuery = useQuery({
     queryKey: ["conversation", installationId, selectedId],
     queryFn: () => chatService.getConversation(selectedId ?? "", installationId),
-    enabled: isSupportMode && Boolean(selectedId),
+    enabled: Boolean(selectedId) && (isSupportMode || Boolean(guestConversationId)),
+    refetchInterval: (query) => {
+      if (isSupportMode) {
+        return 5_000;
+      }
+      return query.state.data?.status === "escalated" ? 5_000 : false;
+    },
   });
 
   const sendMutation = useMutation({
     mutationFn: async () => {
+      if (isSupportMode) {
+        const text =
+          draft.trim() || conversationQuery.data?.suggestedResponse?.trim() || "";
+        if (!selectedId || !text) {
+          return null;
+        }
+        await chatService.sendOperatorReply(selectedId, installationId, text);
+        return { kind: "operator" as const };
+      }
       if (!draft.trim() && !pendingImage) {
         return null;
       }
 
-      const guestUserId = `guest-${guestConversationId ?? "session"}`;
-
-      return chatService.sendMessage(
-        {
-          message_id: crypto.randomUUID(),
-          workspace_id: installationId,
-          conversation_id: selectedId,
-          text: draft.trim() || null,
-          image_base64: pendingImage ? dataUrlToBase64(pendingImage.previewUrl) : null,
-          user_id: user?.id ?? guestUserId,
-        },
+      const alreadyEscalated = Boolean(
+        conversationQuery.data?.status === "escalated" ||
+          conversationQuery.data?.messages.some((message) => message.escalated) ||
+          guestMessages.some((message) => message.escalated),
       );
+      const userContent = draft.trim() || "Пользователь отправил изображение";
+      const imageUrl = pendingImage?.previewUrl;
+      const guestUserId = `guest-${guestConversationId ?? "session"}`;
+      const data = await chatService.sendMessage({
+        message_id: crypto.randomUUID(),
+        workspace_id: installationId,
+        conversation_id: selectedId,
+        text: draft.trim() || null,
+        image_base64: pendingImage ? dataUrlToBase64(pendingImage.previewUrl) : null,
+        user_id: user?.id ?? guestUserId,
+      });
+      return {
+        kind: "guest" as const,
+        data,
+        userContent,
+        imageUrl,
+        alreadyEscalated,
+      };
     },
-    onSuccess: async (data) => {
-      if (!data) {
+    onSuccess: async (result) => {
+      if (!result) {
         return;
-      }
-
-      const createdAt = new Date().toISOString();
-      if (!isSupportMode) {
-        const userContent = draft.trim() || "Пользователь отправил изображение";
-        const nextGuestMessages: ConversationMessage[] = [
-          ...guestMessages,
-          {
-            id: crypto.randomUUID(),
-            role: "user",
-            content: userContent,
-            createdAt,
-            imageUrl: pendingImage?.previewUrl,
-          },
-          {
-            id: data.message_id,
-            role: data.escalated ? "system" : "assistant",
-            content: data.text,
-            createdAt,
-            confidence: data.confidence,
-            escalated: data.escalated,
-            sources: data.sources,
-          },
-        ];
-        setGuestConversationId(data.conversation_id);
-        setGuestMessages(nextGuestMessages);
       }
 
       setDraft("");
       setPendingImage(null);
-      if (isSupportMode) {
-        await queryClient.invalidateQueries({ queryKey: ["conversations"] });
-        await queryClient.invalidateQueries({
-          queryKey: ["conversation", installationId, selectedId],
+      if (result.kind === "guest") {
+        const createdAt = new Date().toISOString();
+        const conversationId = result.data.conversation_id;
+        const userMessage: ConversationMessage = {
+          id: crypto.randomUUID(),
+          role: "user",
+          content: result.userContent,
+          createdAt,
+          imageUrl: result.imageUrl,
+        };
+        const replyMessage: ConversationMessage = {
+          id: result.data.message_id,
+          role: result.data.escalated ? "system" : "assistant",
+          content: result.data.text,
+          createdAt,
+          confidence: result.data.confidence,
+          escalated: result.data.escalated,
+          sources: result.data.sources,
+        };
+        setGuestConversationId(conversationId);
+        setGuestMessages((current) => {
+          const next = [...current, userMessage];
+          if (!result.alreadyEscalated) {
+            next.push(replyMessage);
+          }
+          return next;
         });
+        queryClient.setQueryData(
+          ["conversation", installationId, conversationId],
+          (current: ConversationDetail | null | undefined) => {
+            if (!current) {
+              return current;
+            }
+            return {
+              ...current,
+              messages: result.alreadyEscalated
+                ? [...current.messages, userMessage]
+                : [...current.messages, userMessage, replyMessage],
+            };
+          },
+        );
+        toast({
+          title:
+            result.data.escalated && !result.alreadyEscalated
+              ? "Диалог эскалирован"
+              : "Сообщение отправлено",
+          description: result.alreadyEscalated ? undefined : result.data.text,
+        });
+      } else {
+        toast({ title: "Ответ отправлен" });
       }
-      toast({
-        title: data.escalated ? "Диалог эскалирован" : "Сообщение отправлено",
-        description: data.text,
+      await queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      await queryClient.invalidateQueries({
+        queryKey: ["conversation", installationId, selectedId],
       });
     },
-    onError: (error) =>
+    onError: (error) => {
+      if (error instanceof ApiServiceError && error.status === 409) {
+        toast({
+          title: "Диалог закрыт",
+          description: "Оператор уже закрыл обращение.",
+        });
+        return;
+      }
       toast({
         title: "Backend не ответил",
         description: error instanceof Error ? error.message : "Повторите запрос позже.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const generateMutation = useMutation({
+    mutationFn: () => {
+      if (!selectedId) {
+        return Promise.resolve(null);
+      }
+      return chatService.generateSuggestion(selectedId, installationId);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["conversation"] });
+    },
+    onError: (error) =>
+      toast({
+        title: "Не удалось сгенерировать ответ",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      }),
+  });
+
+  const resolveMutation = useMutation({
+    mutationFn: () => {
+      if (!selectedId) {
+        return Promise.resolve();
+      }
+      return chatService.resolveConversation(selectedId, installationId);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      await queryClient.invalidateQueries({ queryKey: ["conversation"] });
+      toast({ title: "Диалог закрыт" });
+      if (isSupportMode) {
+        router.replace("/chat/support");
+      }
+    },
+    onError: (error) =>
+      toast({
+        title: "Не удалось закрыть диалог",
+        description: error instanceof Error ? error.message : undefined,
         variant: "destructive",
       }),
   });
 
   const conversation = conversationQuery.data;
+  const guestVisibleMessages = conversationQuery.data?.messages ?? guestMessages;
+  const guestClosed = conversationQuery.data?.status === "resolved";
 
   if (!isSupportMode) {
     return (
@@ -197,7 +293,7 @@ export function ChatPage({
               </div>
               <ScrollArea className="flex-1">
                 <div className="space-y-4 p-6">
-                  {guestMessages.length === 0 ? (
+                  {guestVisibleMessages.length === 0 ? (
                     <div className="rounded-[26px] border border-dashed border-border bg-slate-50/80 p-6">
                       <p className="text-base font-medium text-secondary">
                         Опишите проблему, код ошибки, форму 1С или приложите скриншот.
@@ -208,7 +304,7 @@ export function ChatPage({
                       </p>
                     </div>
                   ) : null}
-                  {guestMessages.map((message) => (
+                  {guestVisibleMessages.map((message) => (
                     <MessageBubble key={message.id} message={message} />
                   ))}
                 </div>
@@ -230,18 +326,27 @@ export function ChatPage({
                 ) : null}
                 <Textarea
                   rows={5}
-                  placeholder="Опишите ошибку, код 1С или приложите скриншот"
+                  placeholder={
+                    guestClosed
+                      ? "Диалог закрыт оператором"
+                      : "Опишите ошибку, код 1С или приложите скриншот"
+                  }
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
+                  disabled={guestClosed}
                 />
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <Button variant="outline" onClick={() => setImageDialogOpen(true)}>
+                  <Button
+                    variant="outline"
+                    onClick={() => setImageDialogOpen(true)}
+                    disabled={guestClosed}
+                  >
                     <ImagePlus className="h-4 w-4" />
                     Прикрепить скриншот
                   </Button>
                   <Button
                     onClick={() => sendMutation.mutate()}
-                    disabled={sendMutation.isPending}
+                    disabled={sendMutation.isPending || guestClosed}
                   >
                     <Send className="h-4 w-4" />
                     Отправить вопрос
@@ -349,9 +454,12 @@ export function ChatPage({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem>Архивировать</DropdownMenuItem>
-              <DropdownMenuItem>Изменить приоритет</DropdownMenuItem>
-              <DropdownMenuItem>Пометить как resolved</DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => resolveMutation.mutate()}
+                disabled={resolveMutation.isPending || conversation.status !== "escalated"}
+              >
+                Пометить как resolved
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         ) : null}
@@ -442,45 +550,25 @@ export function ChatPage({
             </ScrollArea>
             <Separator />
             <div className="space-y-4 p-6">
-              {pendingImage ? (
-                <div className="rounded-xl border border-border bg-slate-50 p-3">
-                  <p className="text-sm font-medium text-secondary">{pendingImage.name}</p>
-                  <Image
-                    src={pendingImage.previewUrl}
-                    alt={pendingImage.name}
-                    width={640}
-                    height={360}
-                    unoptimized
-                    className="mt-3 max-h-40 rounded-lg border border-border"
-                  />
-                </div>
-              ) : null}
               <Textarea
                 rows={4}
-                placeholder="Введите сообщение пользователю или оператору"
+                placeholder="Введите сообщение пользователю"
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
+                disabled={conversation?.status !== "escalated"}
               />
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex gap-2">
-                  <Button variant="outline" onClick={() => setImageDialogOpen(true)}>
-                    <ImagePlus className="h-4 w-4" />
-                    Прикрепить скриншот
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() =>
-                      toast({
-                        title: "Запрос передан оператору",
-                        description: "Диалог будет показан в операторской.",
-                      })
-                    }
-                  >
-                    <ShieldAlert className="h-4 w-4" />
-                    Эскалировать оператору
-                  </Button>
-                </div>
-                <Button onClick={() => sendMutation.mutate()} disabled={sendMutation.isPending}>
+              <div className="flex justify-end">
+                <Button
+                  onClick={() => sendMutation.mutate()}
+                  disabled={
+                    sendMutation.isPending ||
+                    conversation?.status !== "escalated" ||
+                    !(
+                      draft.trim() ||
+                      conversation?.suggestedResponse.trim()
+                    )
+                  }
+                >
                   <Send className="h-4 w-4" />
                   Отправить
                 </Button>
@@ -491,15 +579,16 @@ export function ChatPage({
         {conversation ? (
           <OperatorAssistPanel
             conversation={conversation}
-            onSendDraft={() =>
-              toast({
-                title: "Черновик отправлен",
-                description: "Оператор подтвердил ответ пользователю.",
-              })
-            }
+            generatePending={generateMutation.isPending}
+            resolvePending={resolveMutation.isPending}
+            canSend={Boolean(draft.trim() || conversation.suggestedResponse.trim())}
+            sendPending={sendMutation.isPending}
+            onGenerateDraft={() => generateMutation.mutate()}
+            onSendDraft={() => sendMutation.mutate()}
             onEditDraft={() =>
               setDraft((current) => current || conversation.suggestedResponse)
             }
+            onResolve={() => resolveMutation.mutate()}
           />
         ) : (
           <Card className="h-[calc(100vh-14rem)]">
@@ -509,25 +598,6 @@ export function ChatPage({
           </Card>
         )}
       </div>
-      <Dialog open={imageDialogOpen} onOpenChange={setImageDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Загрузка скриншота</DialogTitle>
-            <DialogDescription>
-              Изображение будет отправлено в анализ вместе с сообщением.
-            </DialogDescription>
-          </DialogHeader>
-          <FileDropzone
-            accept={{ "image/png": [".png"], "image/jpeg": [".jpg", ".jpeg"] }}
-            description="Поддерживаются PNG и JPEG."
-            fileName={pendingImage?.name}
-            onFileSelect={async (file) => {
-              setPendingImage(await attachScreenshot(file));
-              setImageDialogOpen(false);
-            }}
-          />
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
