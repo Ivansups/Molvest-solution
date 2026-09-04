@@ -2,13 +2,13 @@
 
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.logging import preview
 from app.core.security import require_internal_token
 from app.db.session import SessionDep
 from app.schemas.chat import ChatRequest, ChatResponse
-from app.services.agent import run_chat_turn
+from app.services.agent import ConversationConflictError, run_chat_turn
 
 router = APIRouter(
     tags=["chat"],
@@ -28,7 +28,13 @@ async def chat(request: ChatRequest, session: SessionDep) -> ChatResponse:
         bool(request.image_base64),
         preview(request.text or ""),
     )
-    response = await run_chat_turn(request, session)
+    try:
+        response = await run_chat_turn(request, session)
+    except ConversationConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.detail,
+        ) from exc
     logger.info(
         "выход /chat message_id=%s conversation_id=%s escalated=%s "
         "confidence=%s sources=%s text=%s",

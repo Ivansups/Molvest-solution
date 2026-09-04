@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, NoReturn
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -14,10 +14,22 @@ from app.schemas.conversations import (
     ConversationDetailOut,
     ConversationListOut,
     ConversationListParams,
+    ConversationOut,
+    MessageOut,
+    OperatorActionIn,
+    OperatorMessageIn,
     conversation_to_detail,
     conversation_to_out,
+    message_to_out,
 )
 from app.selectors import conversations as conversation_selectors
+from app.services.agent import ConversationConflictError
+from app.services.operator import (
+    ConversationNotFoundError,
+    add_operator_reply,
+    generate_suggestion,
+    resolve_conversation,
+)
 
 router = APIRouter(
     prefix="/api/conversations",
@@ -91,12 +103,99 @@ async def get_conversation_route(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Не найден",
         )
-    messages = sorted(conversation.messages, key=lambda m: m.created_at)
-    escalations = sorted(conversation.escalations, key=lambda e: e.id)
     logger.info(
         "карточка диалога готова conversation_id=%s messages=%s escalations=%s",
         conversation_id,
-        len(messages),
-        len(escalations),
+        len(conversation.messages),
+        len(conversation.escalations),
     )
-    return conversation_to_detail(conversation, messages, escalations)
+    return conversation_to_detail(
+        conversation, conversation.messages, conversation.escalations
+    )
+
+
+def _raise_operator_http(
+    exc: ConversationNotFoundError | ConversationConflictError,
+) -> NoReturn:
+    """404 если диалог чужой/отсутствует, 409 если статус не подходит."""
+    if isinstance(exc, ConversationNotFoundError):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Не найден",
+        ) from None
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=exc.detail,
+    ) from exc
+
+
+@router.post("/{conversation_id}/messages")
+async def add_operator_message_route(
+    session: SessionDep,
+    conversation_id: UUID,
+    body: OperatorMessageIn,
+) -> MessageOut:
+    """Ответ оператора в эскалированный диалог."""
+    logger.info(
+        "ответ оператора conversation_id=%s installation_id=%s",
+        conversation_id,
+        body.installation_id,
+    )
+    try:
+        message = await add_operator_reply(
+            session,
+            conversation_id=conversation_id,
+            installation_id=body.installation_id,
+            text=body.text,
+        )
+    except (ConversationNotFoundError, ConversationConflictError) as exc:
+        _raise_operator_http(exc)
+    return message_to_out(message)
+
+
+@router.post("/{conversation_id}/resolve")
+async def resolve_conversation_route(
+    session: SessionDep,
+    conversation_id: UUID,
+    body: OperatorActionIn,
+) -> ConversationOut:
+    """Закрывает эскалированный диалог."""
+    logger.info(
+        "resolve conversation_id=%s installation_id=%s",
+        conversation_id,
+        body.installation_id,
+    )
+    try:
+        conversation = await resolve_conversation(
+            session,
+            conversation_id=conversation_id,
+            installation_id=body.installation_id,
+        )
+    except (ConversationNotFoundError, ConversationConflictError) as exc:
+        _raise_operator_http(exc)
+    return conversation_to_out(conversation)
+
+
+@router.post("/{conversation_id}/suggest")
+async def suggest_conversation_route(
+    session: SessionDep,
+    conversation_id: UUID,
+    body: OperatorActionIn,
+) -> ConversationDetailOut:
+    """Считает черновик по кнопке оператора."""
+    logger.info(
+        "suggest conversation_id=%s installation_id=%s",
+        conversation_id,
+        body.installation_id,
+    )
+    try:
+        conversation = await generate_suggestion(
+            session,
+            conversation_id=conversation_id,
+            installation_id=body.installation_id,
+        )
+    except (ConversationNotFoundError, ConversationConflictError) as exc:
+        _raise_operator_http(exc)
+    return conversation_to_detail(
+        conversation, conversation.messages, conversation.escalations
+    )

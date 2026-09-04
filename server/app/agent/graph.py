@@ -48,7 +48,23 @@ def build_graph(
     builder.add_edge("vision", "classify")
     builder.add_conditional_edges("classify", _after_classify)
     builder.add_conditional_edges("lookup_cache", _after_cache)
-    builder.add_conditional_edges("retrieve", _after_retrieve)
+
+    def after_retrieve(state: AgentState) -> Literal["generate", "__end__"]:
+        chunks = state.get("chunks") or []
+        confidence = max((c["score"] for c in chunks), default=0.0)
+        nxt: Literal["generate", "__end__"] = (
+            "__end__" if confidence < app_settings.confidence_threshold else "generate"
+        )
+        logger.info(
+            "после retrieve chunks=%s confidence=%s threshold=%s → %s",
+            len(chunks),
+            confidence,
+            app_settings.confidence_threshold,
+            nxt,
+        )
+        return nxt
+
+    builder.add_conditional_edges("retrieve", after_retrieve)
     builder.add_edge("generate", END)
     return builder.compile()
 
@@ -116,36 +132,17 @@ def get_graph() -> CompiledStateGraph[AgentState, None]:
     return _graph
 
 
-def _after_classify(
-    state: AgentState,
-) -> Literal["lookup_cache", "__end__"]:
+def _after_classify(state: AgentState) -> Literal["lookup_cache", "__end__"]:
     intent = state.get("intent", "support")
-    if intent in ("empty", "greeting", "off_topic"):
-        nxt: Literal["lookup_cache", "__end__"] = "__end__"
-    else:
-        nxt = "lookup_cache"
+    nxt: Literal["lookup_cache", "__end__"] = (
+        "__end__" if intent in ("empty", "greeting", "off_topic") else "lookup_cache"
+    )
     logger.info("после classify intent=%s → %s", intent, nxt)
     return nxt
 
 
 def _after_cache(state: AgentState) -> Literal["retrieve", "__end__"]:
     return "__end__" if state.get("answer") else "retrieve"
-
-
-def _after_retrieve(state: AgentState) -> Literal["generate", "__end__"]:
-    chunks = state.get("chunks") or []
-    confidence = max((c["score"] for c in chunks), default=0.0)
-    nxt: Literal["generate", "__end__"] = (
-        "__end__" if confidence < settings.confidence_threshold else "generate"
-    )
-    logger.info(
-        "после retrieve chunks=%s confidence=%s threshold=%s → %s",
-        len(chunks),
-        confidence,
-        settings.confidence_threshold,
-        nxt,
-    )
-    return nxt
 
 
 _graph: CompiledStateGraph[AgentState, None] | None = None

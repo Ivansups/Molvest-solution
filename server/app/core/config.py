@@ -1,5 +1,7 @@
 """Конфигурация приложения из переменных окружения."""
 
+from typing import Literal
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -33,6 +35,8 @@ class Settings(BaseSettings):
     chunk_overlap: int = 40
     upload_dir: str = "./data/uploads"
     internal_service_token: str = ""
+    # draft — generate только по кнопке оператора; auto — агент может ответить гостю.
+    operator_assist_mode: Literal["draft", "auto"] = "draft"
 
     @field_validator("gigachat_embeddings_model")
     @classmethod
@@ -41,6 +45,13 @@ class Settings(BaseSettings):
         if not stripped:
             raise ValueError("GIGACHAT_EMBEDDINGS_MODEL не должен быть пустым")
         return stripped
+
+    @field_validator("operator_assist_mode", mode="before")
+    @classmethod
+    def assist_mode_normalize(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
 
 
 settings = Settings()
