@@ -23,7 +23,7 @@ jobs:
         run: uv run ruff check . && uv run ruff format --check . && uv run mypy .
 
   lint-frontend:
-    name: Frontend checks (eslint/tsc/next build)
+    name: Lint frontend (eslint/tsc)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -44,8 +44,33 @@ jobs:
         run: pnpm lint
       - name: Typecheck
         run: pnpm typecheck
-      # frontend/Dockerfile монтирует исходники в рантайме и не запускает next build,
-      # поэтому сборку фронтенда проверяем здесь, переиспользуя установленные зависимости.
+
+  # frontend/Dockerfile монтирует исходники в рантайме и не запускает next build,
+  # поэтому сборку фронта проверяем отдельной джобой — параллельно линту, а не после него.
+  build-frontend:
+    name: Build frontend (next build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.17.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Restore Next.js build cache
+        uses: actions/cache@v4
+        with:
+          path: frontend/.next/cache
+          key: next-${{ hashFiles('frontend/pnpm-lock.yaml') }}-${{ hashFiles('frontend/src/**', 'frontend/app/**') }}
+          restore-keys: next-${{ hashFiles('frontend/pnpm-lock.yaml') }}-
       - name: Build
         run: pnpm build
 
