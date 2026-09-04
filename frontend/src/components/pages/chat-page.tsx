@@ -42,6 +42,8 @@ import { dataUrlToBase64, fileToCompressedDataUrl } from "@/src/lib/image";
 import { DEFAULT_INSTALLATION_ID } from "@/src/lib/installation";
 import { chatService } from "@/src/services/chat-service";
 
+const CONVERSATIONS_PAGE_SIZE = 50;
+
 async function attachScreenshot(file: File): Promise<{
   name: string;
   previewUrl: string;
@@ -69,32 +71,40 @@ export function ChatPage({
   const [guestConversationId, setGuestConversationId] = useState<string | null>(null);
   const [guestMessages, setGuestMessages] = useState<ConversationMessage[]>([]);
   const [imageDialogOpen, setImageDialogOpen] = useState(false);
+  const [page, setPage] = useState(1);
   const [pendingImage, setPendingImage] = useState<{
     name: string;
     previewUrl: string;
   } | null>(null);
 
   const isSupportMode = mode === "support";
+  const installationId = user?.installationId ?? DEFAULT_INSTALLATION_ID;
 
   const conversationsQuery = useQuery({
-    queryKey: ["conversations"],
-    queryFn: () => chatService.listConversations(),
+    queryKey: ["conversations", installationId, page],
+    queryFn: () =>
+      chatService.listConversations(installationId, page, CONVERSATIONS_PAGE_SIZE),
     enabled: isSupportMode,
+    refetchInterval: 5_000,
   });
 
+  const conversations = conversationsQuery.data?.items;
+  const total = conversationsQuery.data?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / CONVERSATIONS_PAGE_SIZE));
+
   const selectedId = isSupportMode
-    ? ticketId ?? conversationsQuery.data?.[0]?.id ?? null
+    ? ticketId ?? conversations?.[0]?.id ?? null
     : guestConversationId;
 
   useEffect(() => {
-    if (isSupportMode && !ticketId && conversationsQuery.data?.[0]?.id) {
-      router.replace(`/chat/support/${conversationsQuery.data[0].id}`);
+    if (isSupportMode && !ticketId && conversations?.[0]?.id) {
+      router.replace(`/chat/support/${conversations[0].id}`);
     }
-  }, [conversationsQuery.data, isSupportMode, router, ticketId]);
+  }, [conversations, isSupportMode, router, ticketId]);
 
   const conversationQuery = useQuery({
-    queryKey: ["conversation", selectedId],
-    queryFn: () => chatService.getConversation(selectedId ?? ""),
+    queryKey: ["conversation", installationId, selectedId],
+    queryFn: () => chatService.getConversation(selectedId ?? "", installationId),
     enabled: isSupportMode && Boolean(selectedId),
   });
 
@@ -105,12 +115,11 @@ export function ChatPage({
       }
 
       const guestUserId = `guest-${guestConversationId ?? "session"}`;
-      const workspaceId = user?.installationId ?? DEFAULT_INSTALLATION_ID;
 
       return chatService.sendMessage(
         {
           message_id: crypto.randomUUID(),
-          workspace_id: workspaceId,
+          workspace_id: installationId,
           conversation_id: selectedId,
           text: draft.trim() || null,
           image_base64: pendingImage ? dataUrlToBase64(pendingImage.previewUrl) : null,
@@ -153,7 +162,9 @@ export function ChatPage({
       setPendingImage(null);
       if (isSupportMode) {
         await queryClient.invalidateQueries({ queryKey: ["conversations"] });
-        await queryClient.invalidateQueries({ queryKey: ["conversation", selectedId] });
+        await queryClient.invalidateQueries({
+          queryKey: ["conversation", installationId, selectedId],
+        });
       }
       toast({
         title: data.escalated ? "Диалог эскалирован" : "Сообщение отправлено",
@@ -307,8 +318,8 @@ export function ChatPage({
   if (conversationsQuery.isError) {
     return (
       <ApiStateCard
-        title="Support-чат ждёт backend endpoint"
-        description="Публичный `/chat` уже подключён к FastAPI, но список и история диалогов для панели поддержки сервер пока не публикует."
+        title="Не удалось загрузить список диалогов"
+        description="Проверьте, что backend запущен и доступен `/api/conversations`."
         detail={
           conversationsQuery.error instanceof Error
             ? conversationsQuery.error.message
@@ -350,10 +361,10 @@ export function ChatPage({
           <CardHeader>
             <CardTitle>Список диалогов</CardTitle>
           </CardHeader>
-          <CardContent className="h-[calc(100%-5rem)] p-0">
-            <ScrollArea className="h-full">
+          <CardContent className="flex h-[calc(100%-5rem)] flex-col p-0">
+            <ScrollArea className="flex-1">
               <div className="space-y-2 p-4">
-                {conversationsQuery.data?.map((item) => (
+                {conversations?.map((item) => (
                   <button
                     key={item.id}
                     type="button"
@@ -365,22 +376,41 @@ export function ChatPage({
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <p className="font-medium">{item.userName}</p>
+                      <p className="truncate font-medium">{item.userId}</p>
                       <Badge className={item.id === selectedId ? "bg-white text-secondary" : ""}>
                         {item.status}
                       </Badge>
                     </div>
-                    <p className="mt-1 text-sm opacity-80">{item.subject}</p>
-                    <p className="mt-2 line-clamp-2 text-sm opacity-70">
-                      {item.lastMessage}
-                    </p>
-                    <p className="mt-3 text-xs opacity-60">
-                      {formatDateTime(item.lastMessageAt)}
+                    <p className="mt-2 text-xs opacity-60">
+                      Создан {formatDateTime(item.createdAt)}
                     </p>
                   </button>
                 ))}
               </div>
             </ScrollArea>
+            {total > CONVERSATIONS_PAGE_SIZE ? (
+              <div className="flex items-center justify-between gap-2 border-t border-border px-4 py-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page <= 1}
+                  onClick={() => setPage((current) => current - 1)}
+                >
+                  Назад
+                </Button>
+                <span className="text-xs text-slate-500">
+                  {page} / {pageCount} · всего {total}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= pageCount}
+                  onClick={() => setPage((current) => current + 1)}
+                >
+                  Вперёд
+                </Button>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
         <Card className="h-[calc(100vh-14rem)]">

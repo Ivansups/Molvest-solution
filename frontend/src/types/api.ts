@@ -59,3 +59,46 @@ export interface DocumentListOut {
   total: number;
 }
 
+export interface ConversationOut {
+  id: string;
+  installation_id: string;
+  user_id: string;
+  status: ConversationStatus;
+  created_at: string;
+}
+
+export interface EscalationOut {
+  id: string;
+  message_id: string;
+  reason: string;
+  escalated_to: string;
+  resolved_at: string | null;
+}
+
+export interface MessageOut {
+  id: string;
+  role: MessageRole;
+  content: string;
+  confidence: number | null;
+  escalated: boolean;
+  sources: SourceItem[];
+  created_at: string;
+}
+
+export interface ConversationDetailOut {
+  id: string;
+  installation_id: string;
+  user_id: string;
+  status: ConversationStatus;
+  created_at: string;
+  messages: MessageOut[];
+  escalations: EscalationOut[];
+}
+
+export interface ConversationListOut {
+  items: ConversationOut[];
+  page: number;
+  page_size: number;
+  total: number;
+}
+

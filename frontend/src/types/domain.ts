@@ -54,6 +54,22 @@ export interface ConversationPreview {
   suggestedResponse: string;
 }
 
+/** Строка списка диалогов: только поля, которые реально отдаёт /api/conversations. */
+export interface ConversationListItem {
+  id: string;
+  userId: string;
+  status: ConversationStatus;
+  createdAt: string;
+}
+
+/** Страница списка диалогов вместе с метаданными пагинации бэкенда. */
+export interface ConversationPage {
+  items: ConversationListItem[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
 export interface UserProfile {
   company: string;
   department: string;

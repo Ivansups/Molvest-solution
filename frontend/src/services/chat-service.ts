@@ -1,24 +1,106 @@
 import { apiClient } from "@/src/api/client";
-import {
-  toServiceError,
-  unsupportedEndpoint,
-} from "@/src/services/service-helpers";
-import type { ChatRequest, ChatResponse } from "@/src/types/api";
-import type { ConversationDetail, ConversationPreview } from "@/src/types/domain";
+import { ApiServiceError, toServiceError } from "@/src/services/service-helpers";
+import type {
+  ChatRequest,
+  ChatResponse,
+  ConversationDetailOut,
+  ConversationListOut,
+  ConversationOut,
+} from "@/src/types/api";
+import type {
+  ConversationDetail,
+  ConversationListItem,
+  ConversationMessage,
+  ConversationPage,
+} from "@/src/types/domain";
+
+function toListItem(conversation: ConversationOut): ConversationListItem {
+  return {
+    id: conversation.id,
+    userId: conversation.user_id,
+    status: conversation.status,
+    createdAt: conversation.created_at,
+  };
+}
+
+function toMessage(message: ConversationDetailOut["messages"][number]): ConversationMessage {
+  return {
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    createdAt: message.created_at,
+    confidence: message.confidence ?? undefined,
+    escalated: message.escalated,
+    sources: message.sources,
+  };
+}
+
+function toDetail(conversation: ConversationDetailOut): ConversationDetail {
+  return {
+    id: conversation.id,
+    subject: conversation.user_id,
+    userId: conversation.user_id,
+    userName: conversation.user_id,
+    channel: "Bitrix24",
+    status: conversation.status,
+    lastMessage: conversation.messages.at(-1)?.content ?? "",
+    lastMessageAt: conversation.messages.at(-1)?.created_at ?? conversation.created_at,
+    priority: "medium",
+    unread: 0,
+    suggestedResponse: "",
+    userProfile: { company: "", department: "", position: "", lastSeenAt: "" },
+    messages: conversation.messages.map(toMessage),
+  };
+}
 
 export const chatService = {
-  async listConversations(): Promise<ConversationPreview[]> {
-    unsupportedEndpoint(
-      "/api/conversations",
-      "Бэкенд пока не публикует список диалогов для support-панели.",
-    );
+  async listConversations(
+    installationId: string,
+    page: number,
+    pageSize: number,
+  ): Promise<ConversationPage> {
+    try {
+      const response = await apiClient.get<ConversationListOut>("/api/conversations", {
+        params: { installation_id: installationId, page, page_size: pageSize },
+      });
+      return {
+        items: response.data.items.map(toListItem),
+        page: response.data.page,
+        pageSize: response.data.page_size,
+        total: response.data.total,
+      };
+    } catch (error) {
+      throw toServiceError(
+        error,
+        "Не удалось загрузить список диалогов.",
+        "/api/conversations",
+      );
+    }
   },
 
-  async getConversation(ticketId: string): Promise<ConversationDetail | null> {
-    unsupportedEndpoint(
-      `/api/conversations/${ticketId}`,
-      "Бэкенд пока не публикует детали диалога для support-панели.",
-    );
+  async getConversation(
+    ticketId: string,
+    installationId: string,
+  ): Promise<ConversationDetail | null> {
+    try {
+      const response = await apiClient.get<ConversationDetailOut>(
+        `/api/conversations/${ticketId}`,
+        {
+          params: { installation_id: installationId },
+        },
+      );
+      return toDetail(response.data);
+    } catch (error) {
+      // Не найден диалог в этой установке — штатный случай, а не ошибка запроса.
+      if (error instanceof ApiServiceError && error.status === 404) {
+        return null;
+      }
+      throw toServiceError(
+        error,
+        "Не удалось загрузить детали диалога.",
+        `/api/conversations/${ticketId}`,
+      );
+    }
   },
 
   async sendMessage(
