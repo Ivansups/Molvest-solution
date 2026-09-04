@@ -80,8 +80,12 @@ async def db_engine() -> AsyncIterator[AsyncEngine]:
         async with engine.begin() as conn:
             await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
             await conn.run_sync(Base.metadata.create_all)
-    except (OSError, OperationalError):
+    except (OSError, OperationalError) as exc:
         await engine.dispose()
+        # Локально БД поднимать необязательно, но в CI её недоступность —
+        # провал гейта, а не зелёный прогон из одних skip.
+        if os.environ.get("CI"):
+            pytest.fail(f"Postgres недоступен в CI ({TEST_DATABASE_URL}): {exc}")
         pytest.skip("Postgres недоступен")
     yield engine
     async with engine.begin() as conn:

@@ -8,5 +8,5 @@ export default async function OperatorRoute() {
     redirect("/");
   }
 
-  return <OperatorPage />;
+  return <OperatorPage installationId={user.installationId} />;
 }

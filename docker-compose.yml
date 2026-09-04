@@ -66,6 +66,7 @@ services:
       - .env
     environment:
       API_INTERNAL_URL: http://api:8000
+      CI: "true"
       AUTH_SECRET: ${AUTH_SECRET:-dev-auth-secret-change-me}
       AUTH_DATABASE_URL: ${AUTH_DATABASE_URL:-postgresql://postgres:postgres@db:5432/molvest?schema=auth}
       WATCHPACK_POLLING: "true"

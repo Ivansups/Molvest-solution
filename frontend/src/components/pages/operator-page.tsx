@@ -22,7 +22,7 @@ import { formatDateTime } from "@/src/lib/format";
 import { analyticsService } from "@/src/services/analytics-service";
 import { chatService } from "@/src/services/chat-service";
 
-export function OperatorPage() {
+export function OperatorPage({ installationId }: { installationId: string }) {
   const { toast } = useToast();
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -33,8 +33,8 @@ export function OperatorPage() {
   const activeTicketId = selectedId ?? ticketsQuery.data?.[0]?.id ?? null;
 
   const conversationQuery = useQuery({
-    queryKey: ["operator-conversation", activeTicketId],
-    queryFn: () => chatService.getConversation(activeTicketId ?? ""),
+    queryKey: ["operator-conversation", installationId, activeTicketId],
+    queryFn: () => chatService.getConversation(activeTicketId ?? "", installationId),
     enabled: Boolean(activeTicketId),
   });
 

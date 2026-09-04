@@ -1,31 +1,25 @@
 import { apiClient } from "@/src/api/client";
 import { ApiServiceError, toServiceError } from "@/src/services/service-helpers";
-import { DEFAULT_INSTALLATION_ID } from "@/src/lib/installation";
 import type {
   ChatRequest,
   ChatResponse,
   ConversationDetailOut,
+  ConversationListOut,
   ConversationOut,
 } from "@/src/types/api";
 import type {
   ConversationDetail,
+  ConversationListItem,
   ConversationMessage,
-  ConversationPreview,
+  ConversationPage,
 } from "@/src/types/domain";
 
-function toPreview(conversation: ConversationOut): ConversationPreview {
+function toListItem(conversation: ConversationOut): ConversationListItem {
   return {
     id: conversation.id,
-    subject: conversation.user_id,
     userId: conversation.user_id,
-    userName: conversation.user_id,
-    channel: "Bitrix24",
     status: conversation.status,
-    lastMessage: "",
-    lastMessageAt: conversation.created_at,
-    priority: "medium",
-    unread: 0,
-    suggestedResponse: "",
+    createdAt: conversation.created_at,
   };
 }
 
@@ -50,7 +44,7 @@ function toDetail(conversation: ConversationDetailOut): ConversationDetail {
     channel: "Bitrix24",
     status: conversation.status,
     lastMessage: conversation.messages.at(-1)?.content ?? "",
-    lastMessageAt: conversation.created_at,
+    lastMessageAt: conversation.messages.at(-1)?.created_at ?? conversation.created_at,
     priority: "medium",
     unread: 0,
     suggestedResponse: "",
@@ -60,15 +54,21 @@ function toDetail(conversation: ConversationDetailOut): ConversationDetail {
 }
 
 export const chatService = {
-  async listConversations(): Promise<ConversationPreview[]> {
+  async listConversations(
+    installationId: string,
+    page: number,
+    pageSize: number,
+  ): Promise<ConversationPage> {
     try {
-      const response = await apiClient.get<{ items: ConversationOut[] }>(
-        "/api/conversations",
-        {
-          params: { installation_id: DEFAULT_INSTALLATION_ID },
-        },
-      );
-      return response.data.items.map(toPreview);
+      const response = await apiClient.get<ConversationListOut>("/api/conversations", {
+        params: { installation_id: installationId, page, page_size: pageSize },
+      });
+      return {
+        items: response.data.items.map(toListItem),
+        page: response.data.page,
+        pageSize: response.data.page_size,
+        total: response.data.total,
+      };
     } catch (error) {
       throw toServiceError(
         error,
@@ -78,12 +78,15 @@ export const chatService = {
     }
   },
 
-  async getConversation(ticketId: string): Promise<ConversationDetail | null> {
+  async getConversation(
+    ticketId: string,
+    installationId: string,
+  ): Promise<ConversationDetail | null> {
     try {
       const response = await apiClient.get<ConversationDetailOut>(
         `/api/conversations/${ticketId}`,
         {
-          params: { installation_id: DEFAULT_INSTALLATION_ID },
+          params: { installation_id: installationId },
         },
       );
       return toDetail(response.data);
