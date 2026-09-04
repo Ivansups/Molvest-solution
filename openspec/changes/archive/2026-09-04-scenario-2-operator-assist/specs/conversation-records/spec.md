@@ -1,8 +1,4 @@
-## Purpose
-
-Persist conversations, messages, and escalations from `POST /chat`, and expose read-only conversation and metrics APIs for the admin console. Status may change only through the transition service.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Conversation tables exist
 
@@ -12,25 +8,6 @@ The system SHALL persist Conversation, Message, and Escalation rows in PostgreSQ
 
 - **WHEN** an operator runs Alembic upgrade to head against an empty database
 - **THEN** Conversation, Message, and Escalation tables exist with the expected columns including `suggested_response`
-
-### Requirement: Status changes only through the transition service
-
-The system SHALL change `Conversation.status` only through a single transition service. Allowed transitions are `open → escalated` and `escalated → resolved`. Any other assignment, including direct writes from a router or graph node, is out of contract. An illegal transition SHALL raise a domain error and SHALL NOT persist.
-
-#### Scenario: Legal escalation
-
-- **WHEN** the transition service is asked to move a conversation from `open` to `escalated`
-- **THEN** the stored status becomes `escalated`
-
-#### Scenario: Illegal skip
-
-- **WHEN** the transition service is asked to move a conversation from `open` to `resolved`
-- **THEN** the call fails and the stored status stays `open`
-
-#### Scenario: Illegal backward move
-
-- **WHEN** the transition service is asked to move a conversation from `escalated` to `open`
-- **THEN** the call fails and the stored status stays `escalated`
 
 ### Requirement: Chat persists user and assistant messages
 
@@ -65,20 +42,6 @@ The system SHALL, when the graph returns `escalated=true` on an `open` conversat
 - **WHEN** the same weak-scoring turn is sent twice against the same conversation
 - **THEN** exactly one `Escalation` row exists for that conversation and the status stays `escalated`
 
-### Requirement: List conversations
-
-The system SHALL provide `GET /api/conversations` returning a paginated list. The system SHALL support pagination parameters `page` and `page_size`, and optional filters by `date` (range), `user_id`, and `status` (including `escalated`). Responses SHALL include conversation metadata so the admin console can render the list.
-
-#### Scenario: List with status filter
-
-- **WHEN** a client requests `GET /api/conversations` with `status=escalated`
-- **THEN** the API returns only escalated conversations for the installation, with pagination metadata
-
-#### Scenario: List with user filter
-
-- **WHEN** a client requests the list filtered by a `user_id`
-- **THEN** the API returns only conversations of that user for the installation
-
 ### Requirement: Conversation details
 
 The system SHALL provide `GET /api/conversations/{id}` returning the conversation, `suggested_response` (nullable string), its messages with `role` (including `operator`), `content`, `confidence`, `escalated`, and `sources`, and escalations. An unknown id SHALL return 404.
@@ -93,14 +56,7 @@ The system SHALL provide `GET /api/conversations/{id}` returning the conversatio
 - **WHEN** a client fetches an unknown conversation id
 - **THEN** the API returns 404
 
-### Requirement: Conversation metrics
-
-The system SHALL provide `GET /api/metrics` returning the percent of auto-answered messages (those not escalated), the average response time in seconds, and the count of escalations over the requested period.
-
-#### Scenario: Metrics returned
-
-- **WHEN** a client requests `GET /api/metrics`
-- **THEN** the API returns auto-answer percent, average response time, and escalation count based on persisted conversations and messages
+## ADDED Requirements
 
 ### Requirement: Resolved conversations reject new guest turns
 

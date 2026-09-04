@@ -40,10 +40,11 @@ cd server && uv run pytest
 | `test_workspace.py` | нет | UUID workspace без hash; обычная строка → стабильный uuid5 |
 | `test_gigachat_client.py` | нет | обёртка SDK: текст ответа, data-URL для Vision, модель эмбеддингов |
 | `test_conversation_status.py` | нет | `open→escalated→resolved`; запретные переходы |
-| `test_agent_graph.py` | частично | граф: empty/greeting/off-topic без LLM; support → retrieve/generate; эскалация без generate; Vision; кэш ответа; история в промпте; persist + идемпотентная эскалация |
+| `test_agent_graph.py` | частично | граф: empty/greeting/off-topic без LLM; support → retrieve/generate; эскалация без generate; draft+escalated без retrieve/generate; Vision; кэш; persist; resolved → ошибка |
 | `test_documents.py` | да | upload PDF/DOCX, 422/409, список, карточка, удаление чанков, фон index после upload и reindex |
 | `test_rag.py` | частично | чанкинг/HTML/MD без БД; индекс, атомарный reindex, размер вектора, retrieve, FAILED — с БД |
 | `test_conversations_api.py` | да | список/фильтры/изоляция installation; детали; 404; метрики (% автоответов, эскалации) |
+| `test_operator_api.py` | да | ответ оператора, 409 на open, resolve идемпотентный, suggest пишет только черновик |
 
 `conftest.py`: движок Postgres, skip без БД, `api_client` с подменой сессии, общий `llm_mock`.
 
@@ -63,7 +64,7 @@ Vitest, без браузера и без FastAPI.
 | Сценарий | Есть автотест | Дыра |
 | --- | --- | --- |
 | 1. Текстовый Q&A | граф + persist + `/chat` (мок LLM) | нет e2e с живым GigaChat |
-| 2. Чат оператора | нет | UI и API тикетов не покрыты |
+| 2. Чат оператора | граф draft-hold; API messages/resolve/suggest | нет e2e UI / Playwright |
 | 3. Скриншот | Vision-узел графа (мок); ресайз на фронте | нет e2e с картинкой в API |
 | 4. База знаний | upload / delete / reindex / RAG | нет UI-теста админки |
 
