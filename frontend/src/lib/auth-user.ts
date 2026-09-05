@@ -1,5 +1,5 @@
 import type { Session } from "next-auth";
-import { DEFAULT_INSTALLATION_ID } from "@/src/lib/installation";
+import { WORKSPACE_ID } from "@/src/lib/installation";
 import type { AppRole, UserSession } from "@/src/types/domain";
 
 export const DEMO_USERS = [
@@ -29,8 +29,7 @@ export function displayNameForRole(role: AppRole): string {
 }
 
 export function getSupportInstallationId(): string {
-  const configured = process.env.SUPPORT_INSTALLATION_ID?.trim();
-  return configured || DEFAULT_INSTALLATION_ID;
+  return WORKSPACE_ID;
 }
 
 export function toUserSession(session: Session | null): UserSession | null {
@@ -49,6 +48,6 @@ export function toUserSession(session: Session | null): UserSession | null {
     name: user.name ?? displayNameForRole(role),
     email: user.email,
     role,
-    installationId: user.installationId ?? getSupportInstallationId(),
+    installationId: getSupportInstallationId(),
   };
 }

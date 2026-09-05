@@ -27,7 +27,7 @@ describe("auth user helpers", () => {
     expect(session).toBeNull();
   });
 
-  it("buildsAppSessionFromNextAuthPayload", () => {
+  it("usesTheSharedWorkspaceForEverySupportSession", () => {
     const session = toUserSession({
       expires: "2099-01-01T00:00:00.000Z",
       user: {
@@ -44,7 +44,7 @@ describe("auth user helpers", () => {
       email: "operator@molvest.ru",
       name: "Анна",
       role: "operator",
-      installationId: "installation-01",
+      installationId: getSupportInstallationId(),
     });
   });
 

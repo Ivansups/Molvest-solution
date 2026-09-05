@@ -10,7 +10,7 @@ const roleMeta = {
   user: { label: "Пользователь", icon: UserCircle2, tone: "bg-white/90" },
   assistant: { label: "AI-агент", icon: Bot, tone: "bg-primary/6" },
   operator: { label: "Оператор", icon: Wrench, tone: "bg-secondary/6" },
-  system: { label: "Система", icon: Bot, tone: "bg-amber-50/90" },
+  system: { label: "system", icon: Bot, tone: "bg-amber-50/90" },
 } as const;
 
 export function MessageBubble({ message }: { message: ConversationMessage }) {

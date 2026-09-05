@@ -1,9 +1,7 @@
 ## Purpose
 
 Public chat workspace at `/chat` for 1C users without a support account, backed by live `POST /chat` responses.
-
 ## Requirements
-
 ### Requirement: Guest chat is accessible without authentication
 
 The system SHALL expose `/chat` as a public route for 1C users without a
@@ -90,4 +88,20 @@ After the guest has a `conversation_id`, the guest chat SHALL refresh that conve
 
 - **WHEN** the conversation has a non-empty `suggested_response`
 - **THEN** the guest chat does not display that draft text as a message
+
+### Requirement: Гостевой диалог сохраняется в пределах вкладки
+
+После первого `POST /chat` frontend SHALL сохранять возвращённый
+`conversation_id` в `sessionStorage` под ключом `guest_conversation_id` и
+использовать его для последующих запросов в этой вкладке.
+
+#### Scenario: Перезагрузка гостевого чата
+
+- **WHEN** гость обновляет страницу после успешного ответа backend
+- **THEN** frontend загружает сохранённый диалог и отображает его историю
+
+#### Scenario: Новая вкладка гостя
+
+- **WHEN** гость открывает чат в другой вкладке без сохранённого ID
+- **THEN** первый `POST /chat` не передаёт `conversation_id` и backend создаёт диалог
 

@@ -13,3 +13,6 @@ inside the container and proxies `/backend/*` to the API.
 Host Node is only for `pnpm lint`, `pnpm typecheck` and `pnpm test`.
 
 Tests live in `tests/`, not next to source files. `pnpm lint` runs ESLint on the whole frontend, including that folder.
+
+Set `NEXT_PUBLIC_WORKSPACE_ID` during the build to the UUID used by the backend
+as `installation_id`. The guest chat and the support console use this same value.

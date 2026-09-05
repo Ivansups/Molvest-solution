@@ -1,9 +1,7 @@
 ## Purpose
 
 Connects the Next.js frontend to FastAPI through a stable proxy path and keeps unavailable backend endpoints visible instead of masked by mock data.
-
 ## Requirements
-
 ### Requirement: Frontend proxies connected backend APIs through a stable local path
 
 The system SHALL proxy connected browser requests through `/backend/:path*` to
@@ -24,19 +22,27 @@ use the proxy path rather than a hard-coded backend host in the browser.
 
 ### Requirement: Frontend services surface unsupported or unavailable APIs explicitly
 
-The service layer SHALL raise a structured error when a console section depends on a backend endpoint that is missing, unimplemented, or temporarily unavailable, and the page SHALL render explicit unavailable or error UI. The system SHALL NOT silently fall back to mock data for those sections.
+The frontend SHALL surface a structured error and render explicit error UI when
+a section depends on an unavailable API. Connected features SHALL use only
+backend endpoint'ы published for stage 6 and SHALL NOT silently fall back to
+mock data.
 
-#### Scenario: Service references an endpoint that backend does not publish
+#### Scenario: Connected API is unavailable
 
-- **WHEN** the support chat service requests `/api/conversations`
-- **THEN** the frontend surfaces a structured unsupported-endpoint error and the
-  page shows an unavailable-state card
+- **WHEN** a connected page cannot load its published backend API
+- **THEN** the page renders an unavailable state instead of fabricated data
 
 #### Scenario: Backend is offline
 
 - **WHEN** a connected page requests `/backend/health` while FastAPI is down
 - **THEN** the page renders an explicit backend-unavailable state instead of
   fabricated data
+
+#### Scenario: Unsupported legacy API is not requested
+
+- **WHEN** dashboard, analytics, operator workspace or settings is opened
+- **THEN** frontend does not request `/api/dashboard`, `/api/analytics`,
+  `/api/operator/tickets` or `/api/settings`
 
 ### Requirement: Frontend runtime is SSR-safe and closed-contour-safe
 
@@ -53,3 +59,18 @@ provide a production build path compatible with the installed Next.js version.
 
 - **WHEN** an operator runs `pnpm --dir frontend build`
 - **THEN** the build completes without requiring external Google Fonts access
+
+### Requirement: Frontend uses bounded backend request timeouts
+
+Frontend SHALL use a 10-second timeout for ordinary backend requests and a
+60-second timeout for chat or AI draft generation.
+
+#### Scenario: Ordinary request timeout
+
+- **WHEN** a list, document or metrics request does not complete in 10 seconds
+- **THEN** frontend treats the request as unavailable
+
+#### Scenario: AI request timeout
+
+- **WHEN** guest chat or operator draft generation takes longer than 10 seconds
+- **THEN** frontend continues waiting until 60 seconds before timing out
