@@ -202,7 +202,7 @@ async def _avg_response_time_seconds(
         for row in rows
         if row.first_user is not None
         and row.first_answer is not None
-        and row.first_answer > row.first_user
+        and row.first_answer >= row.first_user
     ]
 
     if not durations:

@@ -6,6 +6,7 @@
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +15,7 @@ from app.models.conversation import Conversation
 from app.models.enums import ConversationStatus, MessageRole
 from app.models.escalation import Escalation
 from app.models.message import Message
+from app.models.time import utc_now
 from app.schemas.chat import Source
 from app.services.conversation_status import transition_status
 
@@ -64,14 +66,20 @@ def add_user_message(
     *,
     text: str | None,
     image_base64: str | None,
+    created_at: datetime | None = None,
 ) -> Message:
     """Сообщение пользователя в диалоге (в памяти, без flush)."""
-    return Message(
+    message = Message(
         conversation=conversation,
         role=MessageRole.USER,
         content=text or "",
         image_url=image_base64,
     )
+    # Метка начала хода: иначе user и assistant пишутся с одним utc_now
+    # в конце и среднее время ответа всегда ~0.
+    if created_at is not None:
+        message.created_at = created_at
+    return message
 
 
 def add_assistant_message(
@@ -81,10 +89,11 @@ def add_assistant_message(
     confidence: float,
     escalated: bool,
     sources: list[Source],
+    created_at: datetime | None = None,
 ) -> Message:
     """Сообщение ассистента: реальный ответ или гостевой текст эскалации."""
     role = MessageRole.SYSTEM if escalated else MessageRole.ASSISTANT
-    return Message(
+    message = Message(
         conversation=conversation,
         role=role,
         content=content,
@@ -92,6 +101,9 @@ def add_assistant_message(
         escalated=escalated,
         sources=[source.model_dump(mode="json") for source in sources],
     )
+    if created_at is not None:
+        message.created_at = created_at
+    return message
 
 
 def escalate_conversation(
@@ -123,9 +135,17 @@ async def persist_guest_hold(
     conversation: Conversation,
     user_text: str | None,
     user_image: str | None,
+    user_created_at: datetime | None = None,
 ) -> Conversation:
     """Пишет только реплику гостя в уже эскалированный диалог, без LLM."""
-    session.add(add_user_message(conversation, text=user_text, image_base64=user_image))
+    session.add(
+        add_user_message(
+            conversation,
+            text=user_text,
+            image_base64=user_image,
+            created_at=user_created_at,
+        )
+    )
     await session.commit()
     logger.info(
         "ход гостя в эскалации conversation_id=%s без ответа модели",
@@ -146,6 +166,7 @@ async def persist_turn(
     confidence: float,
     escalated: bool,
     sources: list[Source],
+    user_created_at: datetime | None = None,
 ) -> PersistedTurn:
     """Записывает один ход в одной транзакции и коммитит."""
     conversation = await find_or_create_conversation(
@@ -154,13 +175,21 @@ async def persist_turn(
         installation_id=installation_id,
         user_id=user_id,
     )
-    session.add(add_user_message(conversation, text=user_text, image_base64=user_image))
+    session.add(
+        add_user_message(
+            conversation,
+            text=user_text,
+            image_base64=user_image,
+            created_at=user_created_at,
+        )
+    )
     assistant = add_assistant_message(
         conversation,
         content=assistant_content,
         confidence=confidence,
         escalated=escalated,
         sources=sources,
+        created_at=utc_now(),
     )
     session.add(assistant)
     if escalated:
