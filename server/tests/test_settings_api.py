@@ -33,9 +33,7 @@ async def test_get_settings_defaults(settings_client: AsyncClient) -> None:
     response = await settings_client.get("/api/settings")
     assert response.status_code == 200
     body = response.json()
-    assert body["confidence_threshold"] == pytest.approx(
-        settings.confidence_threshold
-    )
+    assert body["confidence_threshold"] == pytest.approx(settings.confidence_threshold)
     assert body["operator_assist_mode"] == settings.operator_assist_mode
 
 
