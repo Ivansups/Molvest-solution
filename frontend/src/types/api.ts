@@ -104,3 +104,14 @@ export interface ConversationListOut {
   total: number;
 }
 
+export interface ConversationMetrics {
+  auto_answer_percent: number;
+  avg_response_time_seconds: number;
+  escalation_count: number;
+}
+
+export interface AgentSettings {
+  confidence_threshold: number;
+  operator_assist_mode: "draft" | "auto";
+}
+

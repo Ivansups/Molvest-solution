@@ -7,9 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.graph import get_graph
 from app.agent.state import AgentState, HistoryTurn, RetrievedChunk
-from app.core.config import settings
 from app.models.conversation import Conversation
 from app.models.enums import ConversationStatus
+from app.models.time import utc_now
 from app.rag.retrieval import workspace_to_installation_id
 from app.schemas.chat import ChatRequest, ChatResponse, Source
 from app.selectors.conversations import list_recent_messages
@@ -18,6 +18,7 @@ from app.services.conversations import (
     persist_guest_hold,
     persist_turn,
 )
+from app.services.runtime_settings import get_effective_operator_assist_mode
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ async def run_chat_turn(
     session: AsyncSession,
 ) -> ChatResponse:
     """Прогоняет запрос через LangGraph, пишет диалог и мапит в контракт."""
+    turn_started_at = utc_now()
     installation_id = workspace_to_installation_id(request.workspace_id)
     existing = await _load_conversation(
         session,
@@ -49,13 +51,14 @@ async def run_chat_turn(
     if (
         existing is not None
         and existing.status == ConversationStatus.ESCALATED
-        and settings.operator_assist_mode == "draft"
+        and get_effective_operator_assist_mode() == "draft"
     ):
         await persist_guest_hold(
             session,
             conversation=existing,
             user_text=_hold_user_text(request),
             user_image=None,
+            user_created_at=turn_started_at,
         )
         logger.info(
             "draft hold conversation_id=%s без графа",
@@ -111,6 +114,7 @@ async def run_chat_turn(
             conversation=existing,
             user_text=user_text,
             user_image=None,
+            user_created_at=turn_started_at,
         )
         return ChatResponse(
             conversation_id=existing.id,
@@ -135,6 +139,7 @@ async def run_chat_turn(
         confidence=confidence,
         escalated=escalated,
         sources=persist_sources,
+        user_created_at=turn_started_at,
     )
 
     return ChatResponse(

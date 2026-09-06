@@ -1,29 +1,32 @@
 import { apiClient } from "@/src/api/client";
 import { toServiceError } from "@/src/services/service-helpers";
-import type { SystemSettings } from "@/src/types/domain";
+import type { AgentSettings } from "@/src/types/api";
 
 export const settingsService = {
-  async getSettings(): Promise<SystemSettings> {
+  async getSettings(): Promise<AgentSettings> {
     try {
-      const response = await apiClient.get<SystemSettings>("/api/settings");
+      const response = await apiClient.get<AgentSettings>("/api/settings");
       return response.data;
     } catch (error) {
       throw toServiceError(
         error,
-        "Бэкенд пока не публикует настройки системы.",
+        "Не удалось загрузить настройки агента.",
         "/api/settings",
       );
     }
   },
 
-  async saveSettings(nextSettings: SystemSettings): Promise<SystemSettings> {
+  async saveSettings(nextSettings: AgentSettings): Promise<AgentSettings> {
     try {
-      const response = await apiClient.put<SystemSettings>("/api/settings", nextSettings);
+      const response = await apiClient.put<AgentSettings>(
+        "/api/settings",
+        nextSettings,
+      );
       return response.data;
     } catch (error) {
       throw toServiceError(
         error,
-        "Бэкенд пока не принимает сохранение настроек.",
+        "Не удалось сохранить настройки агента.",
         "/api/settings",
       );
     }

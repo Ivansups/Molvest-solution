@@ -1,43 +1,27 @@
 import { apiClient } from "@/src/api/client";
 import { toServiceError } from "@/src/services/service-helpers";
-import type { ActiveTicket, AnalyticsData, AuditLogItem } from "@/src/types/domain";
+import type { ConversationMetrics } from "@/src/types/api";
 
 export const analyticsService = {
-  async getAnalytics(): Promise<AnalyticsData> {
+  async getMetrics(params: {
+    installationId: string;
+    dateFrom?: string;
+    dateTo?: string;
+  }): Promise<ConversationMetrics> {
     try {
-      const response = await apiClient.get<AnalyticsData>("/api/analytics");
+      const response = await apiClient.get<ConversationMetrics>("/api/metrics", {
+        params: {
+          installation_id: params.installationId,
+          date_from: params.dateFrom || undefined,
+          date_to: params.dateTo || undefined,
+        },
+      });
       return response.data;
     } catch (error) {
       throw toServiceError(
         error,
-        "Бэкенд пока не публикует аналитические метрики.",
-        "/api/analytics",
-      );
-    }
-  },
-
-  async getLogs(): Promise<AuditLogItem[]> {
-    try {
-      const response = await apiClient.get<AuditLogItem[]>("/api/logs");
-      return response.data;
-    } catch (error) {
-      throw toServiceError(
-        error,
-        "Бэкенд пока не публикует журнал логов.",
-        "/api/logs",
-      );
-    }
-  },
-
-  async getActiveTickets(): Promise<ActiveTicket[]> {
-    try {
-      const response = await apiClient.get<ActiveTicket[]>("/api/operator/tickets");
-      return response.data;
-    } catch (error) {
-      throw toServiceError(
-        error,
-        "Бэкенд пока не публикует активные операторские тикеты.",
-        "/api/operator/tickets",
+        "Не удалось загрузить метрики диалогов.",
+        "/api/metrics",
       );
     }
   },

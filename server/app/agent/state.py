@@ -2,7 +2,7 @@
 
 from typing import Literal, TypedDict
 
-Intent = Literal["empty", "greeting", "off_topic", "support"]
+Intent = Literal["empty", "support"]
 
 
 class RetrievedChunk(TypedDict):

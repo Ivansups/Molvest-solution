@@ -15,6 +15,7 @@ from app.core.config import Settings, settings
 from app.core.gigachat_client import GigaChatService, get_gigachat_service
 from app.core.redis import get_cached_answer, get_kb_version, set_cached_answer
 from app.rag.retrieval import Retriever, make_retriever
+from app.services.runtime_settings import get_effective_confidence_threshold
 
 logger = logging.getLogger(__name__)
 
@@ -52,14 +53,15 @@ def build_graph(
     def after_retrieve(state: AgentState) -> Literal["generate", "__end__"]:
         chunks = state.get("chunks") or []
         confidence = max((c["score"] for c in chunks), default=0.0)
+        threshold = get_effective_confidence_threshold()
         nxt: Literal["generate", "__end__"] = (
-            "__end__" if confidence < app_settings.confidence_threshold else "generate"
+            "__end__" if confidence < threshold else "generate"
         )
         logger.info(
             "после retrieve chunks=%s confidence=%s threshold=%s → %s",
             len(chunks),
             confidence,
-            app_settings.confidence_threshold,
+            threshold,
             nxt,
         )
         return nxt
@@ -135,7 +137,7 @@ def get_graph() -> CompiledStateGraph[AgentState, None]:
 def _after_classify(state: AgentState) -> Literal["lookup_cache", "__end__"]:
     intent = state.get("intent", "support")
     nxt: Literal["lookup_cache", "__end__"] = (
-        "__end__" if intent in ("empty", "greeting", "off_topic") else "lookup_cache"
+        "__end__" if intent == "empty" else "lookup_cache"
     )
     logger.info("после classify intent=%s → %s", intent, nxt)
     return nxt

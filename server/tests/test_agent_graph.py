@@ -7,12 +7,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.graph import build_graph
-from app.agent.nodes.classify import (
-    _EMPTY_REPLY,
-    _GREETING_REPLY,
-    _OFF_TOPIC_REPLY,
-    classify,
-)
+from app.agent.nodes.classify import _EMPTY_REPLY, classify
 from app.agent.nodes.generate import generate
 from app.agent.state import AgentState, RetrievedChunk
 from app.core.config import Settings
@@ -82,27 +77,18 @@ async def test_empty_input_skips_llm(
     llm_mock.chat_with_vision.assert_not_called()
 
 
-async def test_greeting_skips_retrieve(
+async def test_greeting_and_off_topic_still_reach_generate(
     llm_mock: MagicMock, app_settings: Settings
 ) -> None:
-    graph = build_graph(llm_mock, app_settings)
-    result = await graph.ainvoke(_state(text="привет"))
-    assert result["intent"] == "greeting"
-    assert result["answer"] == _GREETING_REPLY
-    assert result["confidence"] == 1.0
-    assert result["escalated"] is False
-    assert result["chunks"] == []
-    llm_mock.generate.assert_not_called()
-
-
-async def test_off_topic_skips_generate(
-    llm_mock: MagicMock, app_settings: Settings
-) -> None:
-    graph = build_graph(llm_mock, app_settings)
-    result = await graph.ainvoke(_state(text="какая у вас погода"))
-    assert result["intent"] == "off_topic"
-    assert result["answer"] == _OFF_TOPIC_REPLY
-    llm_mock.generate.assert_not_called()
+    """Приветствие и оффтоп больше не отвечают заготовкой — всегда идёт LLM."""
+    llm_mock.generate = AsyncMock(return_value="Ответ из базы")
+    graph = build_graph(llm_mock, app_settings, retriever=_hit_retriever)
+    for text in ("привет", "какая у вас погода"):
+        llm_mock.generate.reset_mock()
+        result = await graph.ainvoke(_state(text=text))
+        assert result["intent"] == "support"
+        assert result["answer"] == "Ответ из базы"
+        llm_mock.generate.assert_awaited_once()
 
 
 async def test_support_retrieves_then_generates(
@@ -155,34 +141,14 @@ async def test_vision_enriches_query_then_classifies(
 
 
 async def test_classify_rules() -> None:
-    assert (await classify({"query": "привет!"}))["intent"] == "greeting"
-    assert (await classify({"query": "спасибо"}))["intent"] == "greeting"
+    assert (await classify({"query": "привет!"}))["intent"] == "support"
+    assert (await classify({"query": "спасибо"}))["intent"] == "support"
     assert (await classify({"query": "как провести документ"}))["intent"] == "support"
-    assert (await classify({"query": "привет, как провести документ"}))[
-        "intent"
-    ] == "support"
-    assert (await classify({"query": "какая у вас погода"}))["intent"] == "off_topic"
+    assert (await classify({"query": "какая у вас погода"}))["intent"] == "support"
+    assert (await classify({"query": "ты натурал?"}))["intent"] == "support"
     empty = await classify({"query": "   "})
     assert empty["intent"] == "empty"
     assert empty["answer"] == _EMPTY_REPLY
-
-
-@pytest.mark.parametrize(
-    "query",
-    [
-        "ошибка при проведении накладной",
-        "проблема с отчетом по НДС",
-        "настройки не сохраняются",
-        "обновление конфигурации упало",
-        "зарплата не начисляется",
-        "не проводится накладная",
-        "блокировка при записи документа",
-        "здравствуйте, не открывается 1с",
-    ],
-)
-async def test_classify_matches_word_forms(query: str) -> None:
-    """Элементы _SUPPORT_RE — основы: словоформы не должны уходить в off_topic."""
-    assert (await classify({"query": query}))["intent"] == "support"
 
 
 async def test_run_chat_turn_maps_contract_and_persists(

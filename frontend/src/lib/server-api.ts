@@ -1,5 +1,5 @@
 import { fetchAdminApi } from "@/src/lib/admin-api";
-import type { DocumentListOut } from "@/src/types/api";
+import type { ConversationMetrics, DocumentListOut } from "@/src/types/api";
 import { getApiBaseUrl } from "@/src/lib/api-base";
 import { internalTokenHeaders } from "@/src/lib/internal-token";
 
@@ -28,21 +28,27 @@ export async function serverFetchJson<T>(
 export async function loadDashboard(installationId: string): Promise<{
   health: ServerResult<{ status: string }>;
   documents: ServerResult<DocumentListOut>;
+  metrics: ServerResult<ConversationMetrics>;
 }> {
-  const query = new URLSearchParams({
+  const documentsQuery = new URLSearchParams({
     installation_id: installationId,
     page: "1",
     page_size: "20",
   });
+  const metricsQuery = new URLSearchParams({
+    installation_id: installationId,
+  });
 
-  const [health, documents] = await Promise.all([
+  const [health, documents, metrics] = await Promise.all([
     serverFetchJson<{ status: string }>(
       "/health",
       "Не удалось получить статус backend /health.",
     ),
     (async () => {
       try {
-        const response = await fetchAdminApi(`/api/documents?${query.toString()}`);
+        const response = await fetchAdminApi(
+          `/api/documents?${documentsQuery.toString()}`,
+        );
         if (!response.ok) {
           return {
             ok: false as const,
@@ -60,7 +66,11 @@ export async function loadDashboard(installationId: string): Promise<{
         };
       }
     })(),
+    serverFetchJson<ConversationMetrics>(
+      `/api/metrics?${metricsQuery.toString()}`,
+      "Не удалось загрузить метрики диалогов.",
+    ),
   ]);
 
-  return { health, documents };
+  return { health, documents, metrics };
 }

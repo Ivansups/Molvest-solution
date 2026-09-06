@@ -35,6 +35,7 @@ import { Separator } from "@/src/components/ui/separator";
 import { Spinner } from "@/src/components/ui/spinner";
 import { Textarea } from "@/src/components/ui/textarea";
 import type { ConversationDetail, ConversationMessage, UserSession } from "@/src/types/domain";
+import { useConversation } from "@/src/hooks/use-conversation";
 import { useToast } from "@/src/hooks/use-toast";
 import { formatDateTime } from "@/src/lib/format";
 import { dataUrlToBase64, fileToCompressedDataUrl } from "@/src/lib/image";
@@ -68,7 +69,10 @@ export function ChatPage({
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [draft, setDraft] = useState("");
-  const [guestConversationId, setGuestConversationId] = useState<string | null>(null);
+  const {
+    conversationId: guestConversationId,
+    setConversationId: setGuestConversationId,
+  } = useConversation();
   const [guestMessages, setGuestMessages] = useState<ConversationMessage[]>([]);
   const [imageDialogOpen, setImageDialogOpen] = useState(false);
   const [page, setPage] = useState(1);
@@ -275,6 +279,7 @@ export function ChatPage({
 
   const conversation = conversationQuery.data;
   const guestVisibleMessages = conversationQuery.data?.messages ?? guestMessages;
+  const guestEscalated = conversationQuery.data?.status === "escalated";
   const guestClosed = conversationQuery.data?.status === "resolved";
 
   if (!isSupportMode) {
@@ -290,6 +295,11 @@ export function ChatPage({
                 <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-secondary">
                   Гостевой чат поддержки 1С
                 </h2>
+                {guestEscalated ? (
+                  <Badge className="mt-3 border-warning/30 bg-warning/10 text-warning">
+                    Эскалировано оператору
+                  </Badge>
+                ) : null}
               </div>
               <ScrollArea className="flex-1">
                 <div className="space-y-4 p-6">
@@ -333,6 +343,15 @@ export function ChatPage({
                   }
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" || event.shiftKey) {
+                      return;
+                    }
+                    event.preventDefault();
+                    if (!sendMutation.isPending && !guestClosed) {
+                      sendMutation.mutate();
+                    }
+                  }}
                   disabled={guestClosed}
                 />
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -555,6 +574,21 @@ export function ChatPage({
                 placeholder="Введите сообщение пользователю"
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" || event.shiftKey) {
+                    return;
+                  }
+                  event.preventDefault();
+                  const canSend =
+                    !sendMutation.isPending &&
+                    conversation?.status === "escalated" &&
+                    Boolean(
+                      draft.trim() || conversation?.suggestedResponse.trim(),
+                    );
+                  if (canSend) {
+                    sendMutation.mutate();
+                  }
+                }}
                 disabled={conversation?.status !== "escalated"}
               />
               <div className="flex justify-end">

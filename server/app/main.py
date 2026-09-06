@@ -12,6 +12,7 @@ from app.api.conversations import router as conversations_router
 from app.api.documents import router as documents_router
 from app.api.health import router as health_router
 from app.api.metrics import router as metrics_router
+from app.api.settings import router as settings_router
 from app.core.config import settings
 from app.core.errors import error_envelope, register_error_handlers
 from app.core.logging import request_id_var, setup_logging
@@ -39,6 +40,7 @@ app.include_router(chat_router)
 app.include_router(documents_router)
 app.include_router(conversations_router)
 app.include_router(metrics_router)
+app.include_router(settings_router)
 
 _SKIP_ACCESS_LOG = frozenset({"/health", "/docs", "/openapi.json", "/redoc"})
 

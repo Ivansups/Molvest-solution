@@ -1,5 +1,6 @@
 """Read-only API диалогов этапа 6: список, фильтры, детали и метрики."""
 
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 from httpx import AsyncClient
@@ -20,6 +21,7 @@ async def _make_conversation(
     installation_id: UUID = INSTALL,
     user_id: str = "u1",
     escalated: bool = False,
+    response_delay: timedelta = timedelta(seconds=0),
 ) -> Conversation:
     """Создаёт диалог с user- и assistant/system-сообщением и optional эскалацией."""
     conversation = Conversation(
@@ -30,11 +32,13 @@ async def _make_conversation(
     db_session.add(conversation)
     await db_session.flush()
 
+    started = datetime.now(UTC)
     db_session.add(
         Message(
             conversation_id=conversation.id,
             role=MessageRole.USER,
             content="вопрос",
+            created_at=started,
         )
     )
     assistant = Message(
@@ -44,6 +48,7 @@ async def _make_conversation(
         confidence=0.4 if escalated else 0.95,
         escalated=escalated,
         sources=[{"doc": "x"}] if not escalated else [],
+        created_at=started + response_delay,
     )
     db_session.add(assistant)
     await db_session.flush()
@@ -190,11 +195,19 @@ async def test_metrics_returns_auto_answer_percent_and_count(
     db_session: AsyncSession,
 ) -> None:
     # 1 автоответ (assistant, не escalated) + 1 эскалированный (system, escalated)
-    await _make_conversation(db_session, user_id="auto", escalated=False)
-    await _make_conversation(db_session, user_id="esc", escalated=True)
+    await _make_conversation(
+        db_session, user_id="auto", escalated=False, response_delay=timedelta(seconds=2)
+    )
+    await _make_conversation(
+        db_session, user_id="esc", escalated=True, response_delay=timedelta(seconds=4)
+    )
     # шум в другой установке не должен попадать в метрики INSTALL
     await _make_conversation(
-        db_session, installation_id=OTHER_INSTALL, user_id="other", escalated=True
+        db_session,
+        installation_id=OTHER_INSTALL,
+        user_id="other",
+        escalated=True,
+        response_delay=timedelta(seconds=100),
     )
 
     response = await api_client.get(
@@ -205,7 +218,8 @@ async def test_metrics_returns_auto_answer_percent_and_count(
     # 2 ассистентских/system ответа всего, 1 из них эскалирован → 50% автоответов
     assert body["auto_answer_percent"] == 50.0
     assert body["escalation_count"] == 1
-    assert body["avg_response_time_seconds"] >= 0
+    # среднее (2с + 4с) / 2
+    assert body["avg_response_time_seconds"] == 3.0
 
 
 async def test_metrics_empty_installation_is_zero(

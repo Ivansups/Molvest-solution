@@ -199,6 +199,19 @@ export function OperatorPage({ installationId }: { installationId: string }) {
                   placeholder="Правка ответа оператора"
                   value={reply}
                   onChange={(event) => setReply(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" || event.shiftKey) {
+                      return;
+                    }
+                    event.preventDefault();
+                    const text =
+                      reply.trim() ||
+                      conversationQuery.data?.suggestedResponse?.trim() ||
+                      "";
+                    if (!sendMutation.isPending && text) {
+                      sendMutation.mutate();
+                    }
+                  }}
                 />
               </div>
             ) : null}

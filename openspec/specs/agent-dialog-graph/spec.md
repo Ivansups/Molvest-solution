@@ -1,31 +1,36 @@
 ## Purpose
 
-Orchestrate guest support turns: classify without GigaChat, cache or retrieve, then generate only when needed.
+Orchestrate guest support turns: classify only empty vs. non-empty without GigaChat, cache or retrieve, then generate for every real question — no canned template ever substitutes for a model call.
 
 ## Requirements
 
-### Requirement: Classify prefers support over greeting
+### Requirement: Classify only filters empty input
 
-The classify node SHALL run without calling GigaChat. An empty query SHALL be `empty`. If the text matches support keywords it SHALL be `support`, even when a greeting word is also present. Otherwise a greeting or thanks match SHALL be `greeting`. Everything else SHALL be `off_topic`.
+The classify node SHALL run without calling GigaChat and SHALL only distinguish `empty` from `support`. An empty (or whitespace-only) query SHALL be `empty`. Every non-empty query — including greetings, thanks, and off-topic phrasing — SHALL be `support` and continue to retrieve / generate. The system SHALL NOT special-case greeting or off-topic text with a canned reply that skips GigaChat, since doing so would answer without ever consulting the model.
 
 #### Scenario: Greeting plus a 1C question is support
 
 - **WHEN** the user sends «привет, как провести документ в 1С»
 - **THEN** intent is `support` and the graph continues to retrieve
 
-#### Scenario: Thanks is greeting
+#### Scenario: Thanks still reaches the model
 
 - **WHEN** the user sends «спасибо»
-- **THEN** intent is `greeting` and retrieve is not called
+- **THEN** intent is `support` and the graph continues to retrieve / generate, not a canned greeting reply
 
-### Requirement: Greeting, thanks, empty, and off-topic use templates
+#### Scenario: Ambiguous IT question is support
 
-For intents `empty`, `greeting`, and `off_topic` the system SHALL return a fixed template and SHALL NOT call GigaChat `generate`.
+- **WHEN** the user sends «не понимаю как поднять сервер»
+- **THEN** intent is `support` and the graph continues to retrieve
 
-#### Scenario: Greeting skips the model
+#### Scenario: Off-topic phrasing still reaches the model
 
-- **WHEN** the user sends «привет»
-- **THEN** the response text is the greeting template and `generate` is not called
+- **WHEN** the user sends «какая у вас погода»
+- **THEN** intent is `support` and the graph continues to retrieve / generate, not a canned off-topic reply
+
+### Requirement: Only empty input uses a template
+
+For intent `empty` the system SHALL return a fixed template and SHALL NOT call GigaChat `generate`. This is the only intent allowed to skip the model — greeting and off-topic text no longer exist as separate intents.
 
 #### Scenario: Empty skips the model
 
