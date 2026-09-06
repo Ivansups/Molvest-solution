@@ -333,6 +333,15 @@ export function ChatPage({
                   }
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" || event.shiftKey) {
+                      return;
+                    }
+                    event.preventDefault();
+                    if (!sendMutation.isPending && !guestClosed) {
+                      sendMutation.mutate();
+                    }
+                  }}
                   disabled={guestClosed}
                 />
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -555,6 +564,21 @@ export function ChatPage({
                 placeholder="Введите сообщение пользователю"
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" || event.shiftKey) {
+                    return;
+                  }
+                  event.preventDefault();
+                  const canSend =
+                    !sendMutation.isPending &&
+                    conversation?.status === "escalated" &&
+                    Boolean(
+                      draft.trim() || conversation?.suggestedResponse.trim(),
+                    );
+                  if (canSend) {
+                    sendMutation.mutate();
+                  }
+                }}
                 disabled={conversation?.status !== "escalated"}
               />
               <div className="flex justify-end">

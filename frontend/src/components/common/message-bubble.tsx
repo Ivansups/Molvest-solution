@@ -79,8 +79,11 @@ export function MessageBubble({ message }: { message: ConversationMessage }) {
         ) : null}
         {message.sources?.length ? (
           <div className="flex flex-wrap gap-2">
-            {message.sources.map((source) => (
-              <Badge key={source.document_id} className="bg-white">
+            {message.sources.map((source, index) => (
+              <Badge
+                key={`${source.document_id}-${index}`}
+                className="bg-white"
+              >
                 {source.title}
               </Badge>
             ))}
