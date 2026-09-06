@@ -1,4 +1,4 @@
-"""Классификация обращения: приветствие, не по теме или вопрос по 1С."""
+"""Классификация обращения: приветствие, явный оффтоп или вопрос в поддержку."""
 
 import logging
 import re
@@ -29,7 +29,13 @@ _SUPPORT_RE = (
     r"не работа|не запуска|не открывается|не записывает|не проводит|"
     r"документ|справочник|отчёт|отчет|настройк|обновлен|регистр|"
     r"запрос|блокировк|права|роль|erp|бухгалтер|"
-    r"калькуляц|себестоимост|зарплат|кадр)"
+    r"калькуляц|себестоимост|зарплат|кадр|"
+    r"сервер|баз[аыуе]|лиценз|клиент|rdp|терминал|публикац)"
+)
+
+_OFF_TOPIC_RE = (
+    r"\b(погод[аыуе]|футбол|анекдот|шутк|политик|курс\s*доллар|"
+    r"натурал|секс|любов|рецепт|кино|сериал)\b"
 )
 
 
@@ -44,7 +50,10 @@ def _canned(query: str, intent: str, answer: str) -> dict[str, object]:
 
 
 async def classify(state: AgentState) -> dict[str, object]:
-    """Определяет intent по правилам (без LLM). Support важнее приветствия."""
+    """Определяет intent по правилам (без LLM).
+
+    Порядок: пусто → support-ключевые → приветствие → явный оффтоп → иначе support.
+    """
     query = (state.get("query") or "").strip()
     if not query:
         logger.info("classify intent=empty")
@@ -59,5 +68,9 @@ async def classify(state: AgentState) -> dict[str, object]:
         logger.info("classify intent=greeting query=%s", preview(query))
         return _canned(query, "greeting", _GREETING_REPLY)
 
-    logger.info("classify intent=off_topic query=%s", preview(query))
-    return _canned(query, "off_topic", _OFF_TOPIC_REPLY)
+    if re.search(_OFF_TOPIC_RE, lower):
+        logger.info("classify intent=off_topic query=%s", preview(query))
+        return _canned(query, "off_topic", _OFF_TOPIC_REPLY)
+
+    logger.info("classify intent=support (default) query=%s", preview(query))
+    return {"query": query, "intent": "support"}

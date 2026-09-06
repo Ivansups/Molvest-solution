@@ -6,7 +6,7 @@ Orchestrate guest support turns: classify without GigaChat, cache or retrieve, t
 
 ### Requirement: Classify prefers support over greeting
 
-The classify node SHALL run without calling GigaChat. An empty query SHALL be `empty`. If the text matches support keywords it SHALL be `support`, even when a greeting word is also present. Otherwise a greeting or thanks match SHALL be `greeting`. Everything else SHALL be `off_topic`.
+The classify node SHALL run without calling GigaChat. An empty query SHALL be `empty`. If the text matches support keywords it SHALL be `support`, even when a greeting word is also present. Otherwise a greeting or thanks match SHALL be `greeting`. Queries that match explicit off-topic phrases SHALL be `off_topic`. Everything else SHALL be `support` (retrieve / escalate), not a canned off-topic template.
 
 #### Scenario: Greeting plus a 1C question is support
 
@@ -17,6 +17,16 @@ The classify node SHALL run without calling GigaChat. An empty query SHALL be `e
 
 - **WHEN** the user sends «спасибо»
 - **THEN** intent is `greeting` and retrieve is not called
+
+#### Scenario: Ambiguous IT question is support
+
+- **WHEN** the user sends «не понимаю как поднять сервер»
+- **THEN** intent is `support` and the graph continues to retrieve
+
+#### Scenario: Explicit off-topic stays canned
+
+- **WHEN** the user sends «какая у вас погода»
+- **THEN** intent is `off_topic` and retrieve is not called
 
 ### Requirement: Greeting, thanks, empty, and off-topic use templates
 
