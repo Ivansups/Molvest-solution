@@ -3,7 +3,10 @@ import {
   Clock3,
   FileClock,
   Files,
+  MessageSquareWarning,
+  Percent,
   ShieldCheck,
+  Timer,
 } from "lucide-react";
 import { StatsCard } from "@/src/components/common/stats-card";
 import { Badge } from "@/src/components/ui/badge";
@@ -18,14 +21,27 @@ import {
 } from "@/src/components/ui/table";
 import { formatDateTime } from "@/src/lib/format";
 import type { ServerResult } from "@/src/lib/server-api";
-import type { DocumentListOut } from "@/src/types/api";
+import type { ConversationMetrics, DocumentListOut } from "@/src/types/api";
+
+function formatPercent(value: number): string {
+  return `${Math.round(value)}%`;
+}
+
+function formatSeconds(value: number): string {
+  if (value < 10) {
+    return `${value.toFixed(1)} с`;
+  }
+  return `${Math.round(value)} с`;
+}
 
 export function DashboardPage({
   health,
   documents,
+  metrics,
 }: {
   health: ServerResult<{ status: string }>;
   documents: ServerResult<DocumentListOut>;
+  metrics: ServerResult<ConversationMetrics>;
 }) {
   const items = documents.ok ? documents.data.items : [];
   const total = documents.ok ? documents.data.total : items.length;
@@ -44,7 +60,7 @@ export function DashboardPage({
       <div>
         <h1 className="text-3xl font-semibold text-secondary">Дашборд</h1>
         <p className="mt-2 text-slate-500">
-          Базовый operational overview по тем backend-функциям, которые уже реально опубликованы.
+          Статус API, база знаний и эффективность агента по живым метрикам.
         </p>
       </div>
       <div className="grid gap-4 xl:grid-cols-4">
@@ -72,6 +88,41 @@ export function DashboardPage({
           value={`${pendingCount} / ${failedCount}`}
           hint="Статусы PENDING и FAILED"
         />
+      </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        {metrics.ok ? (
+          <>
+            <StatsCard
+              icon={Percent}
+              label="Автоответы"
+              value={formatPercent(metrics.data.auto_answer_percent)}
+              hint="Доля ответов без эскалации (GET /api/metrics)"
+            />
+            <StatsCard
+              icon={Timer}
+              label="Среднее время ответа"
+              value={formatSeconds(metrics.data.avg_response_time_seconds)}
+              hint="От первого сообщения пользователя до первого ответа"
+            />
+            <StatsCard
+              icon={MessageSquareWarning}
+              label="Эскалации"
+              value={String(metrics.data.escalation_count)}
+              hint="Число передач оператору за период"
+            />
+          </>
+        ) : (
+          <Card className="md:col-span-3">
+            <CardHeader>
+              <CardTitle>Метрики агента</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-[22px] border border-border/70 bg-slate-50/80 p-4 text-sm leading-6 text-slate-500">
+                {metrics.message}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
       <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <Card>
@@ -136,13 +187,19 @@ export function DashboardPage({
             <div className="rounded-[22px] border border-border/70 bg-slate-50/80 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-sm font-medium text-secondary">`POST /chat`</p>
+                  <p className="text-sm font-medium text-secondary">`GET /api/metrics`</p>
                   <p className="mt-1 text-sm text-slate-500">
-                    Работает через гостевой чат и тестовые обращения
+                    Источник цифр эффективности агента
                   </p>
                 </div>
-                <Badge className="border-primary/20 bg-primary/10 text-primary">
-                  connected
+                <Badge
+                  className={
+                    metrics.ok
+                      ? "border-primary/20 bg-primary/10 text-primary"
+                      : "border-destructive/20 bg-destructive/10 text-destructive"
+                  }
+                >
+                  {metrics.ok ? "live" : "offline"}
                 </Badge>
               </div>
             </div>
@@ -151,7 +208,9 @@ export function DashboardPage({
                 <div>
                   <p className="text-sm font-medium text-secondary">Последняя загрузка</p>
                   <p className="mt-1 text-sm text-slate-500">
-                    {lastUpload ? formatDateTime(lastUpload) : "Документы ещё не загружались"}
+                    {lastUpload
+                      ? formatDateTime(lastUpload)
+                      : "Документы ещё не загружались"}
                   </p>
                 </div>
                 <Clock3 className="h-4 w-4 text-slate-400" />

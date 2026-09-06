@@ -11,6 +11,10 @@ export default async function HomePage() {
 
   const data = await loadDashboard(user.installationId);
   return (
-    <DashboardPage health={data.health} documents={data.documents} />
+    <DashboardPage
+      health={data.health}
+      documents={data.documents}
+      metrics={data.metrics}
+    />
   );
 }
