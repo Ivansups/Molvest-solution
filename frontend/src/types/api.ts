@@ -110,3 +110,8 @@ export interface ConversationMetrics {
   escalation_count: number;
 }
 
+export interface AgentSettings {
+  confidence_threshold: number;
+  operator_assist_mode: "draft" | "auto";
+}
+
