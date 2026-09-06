@@ -3,8 +3,8 @@
 import logging
 
 from app.agent.state import AgentState
-from app.core.config import settings
 from app.rag.retrieval import Retriever
+from app.services.runtime_settings import get_effective_confidence_threshold
 
 logger = logging.getLogger(__name__)
 
@@ -17,14 +17,15 @@ async def retrieve(
     """Возвращает релевантные чанки и оценку уверенности по скору ретривала."""
     chunks = await retriever(state)
     confidence = max((c["score"] for c in chunks), default=0.0)
+    threshold = get_effective_confidence_threshold()
     logger.info(
         "retrieve chunks=%s confidence=%s escalated=%s",
         len(chunks),
         confidence,
-        confidence < settings.confidence_threshold,
+        confidence < threshold,
     )
     return {
         "chunks": chunks,
         "confidence": confidence,
-        "escalated": confidence < settings.confidence_threshold,
+        "escalated": confidence < threshold,
     }
