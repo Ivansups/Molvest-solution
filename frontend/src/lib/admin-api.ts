@@ -25,6 +25,9 @@ export async function fetchAdminApi(
     ...init,
     headers,
     cache: "no-store",
+    signal: init?.signal
+      ? AbortSignal.any([init.signal, AbortSignal.timeout(10_000)])
+      : AbortSignal.timeout(10_000),
   });
 }
 
