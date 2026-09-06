@@ -163,9 +163,9 @@ async def test_classify_rules() -> None:
     ] == "support"
     assert (await classify({"query": "какая у вас погода"}))["intent"] == "off_topic"
     assert (await classify({"query": "ты натурал?"}))["intent"] == "off_topic"
-    assert (
-        await classify({"query": "не понимаю как поднять сервер ?"})
-    )["intent"] == "support"
+    assert (await classify({"query": "не понимаю как поднять сервер ?"}))[
+        "intent"
+    ] == "support"
     assert (await classify({"query": "как настроить доступ"}))["intent"] == "support"
     empty = await classify({"query": "   "})
     assert empty["intent"] == "empty"
