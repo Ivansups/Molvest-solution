@@ -23,7 +23,7 @@ export function AppHeader({ user }: { user: UserSession }) {
 
   return (
     <header className="px-4 pt-4 lg:px-8">
-      <div className="shell-panel soft-shadow flex items-center gap-4 rounded-[22px] border border-white/70 px-4 py-4">
+      <div className="ui-surface shell-panel soft-shadow flex items-center gap-4 rounded-[22px] border border-white/70 px-4 py-4">
         <div className="hidden min-w-0 xl:block">
           <p className="text-[11px] uppercase tracking-[0.2em] text-primary">
             Support Console

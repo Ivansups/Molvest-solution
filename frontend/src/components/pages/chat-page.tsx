@@ -3,11 +3,12 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Ellipsis,
   ImagePlus,
+  RefreshCw,
   Send,
 } from "lucide-react";
 import { ApiStateCard } from "@/src/components/common/api-state-card";
@@ -72,7 +73,9 @@ export function ChatPage({
   const {
     conversationId: guestConversationId,
     setConversationId: setGuestConversationId,
+    resetConversation,
   } = useConversation();
+  const guestConversationVersion = useRef(0);
   const [guestMessages, setGuestMessages] = useState<ConversationMessage[]>([]);
   const [imageDialogOpen, setImageDialogOpen] = useState(false);
   const [page, setPage] = useState(1);
@@ -141,6 +144,7 @@ export function ChatPage({
       const userContent = draft.trim() || "Пользователь отправил изображение";
       const imageUrl = pendingImage?.previewUrl;
       const guestUserId = `guest-${guestConversationId ?? "session"}`;
+      const conversationVersion = guestConversationVersion.current;
       const data = await chatService.sendMessage({
         message_id: crypto.randomUUID(),
         workspace_id: installationId,
@@ -155,6 +159,7 @@ export function ChatPage({
         userContent,
         imageUrl,
         alreadyEscalated,
+        conversationVersion,
       };
     },
     onSuccess: async (result) => {
@@ -162,9 +167,12 @@ export function ChatPage({
         return;
       }
 
-      setDraft("");
-      setPendingImage(null);
       if (result.kind === "guest") {
+        if (result.conversationVersion !== guestConversationVersion.current) {
+          return;
+        }
+        setDraft("");
+        setPendingImage(null);
         const createdAt = new Date().toISOString();
         const conversationId = result.data.conversation_id;
         const userMessage: ConversationMessage = {
@@ -213,6 +221,7 @@ export function ChatPage({
           description: result.alreadyEscalated ? undefined : result.data.text,
         });
       } else {
+        setDraft("");
         toast({ title: "Ответ отправлен" });
       }
       await queryClient.invalidateQueries({ queryKey: ["conversations"] });
@@ -282,24 +291,43 @@ export function ChatPage({
   const guestEscalated = conversationQuery.data?.status === "escalated";
   const guestClosed = conversationQuery.data?.status === "resolved";
 
+  const handleNewGuestConversation = (): void => {
+    guestConversationVersion.current += 1;
+    resetConversation();
+    setGuestMessages([]);
+    setDraft("");
+    setPendingImage(null);
+  };
+
   if (!isSupportMode) {
     return (
       <>
-        <Card className="shell-panel overflow-hidden rounded-[30px]">
+        <Card className="shell-panel reveal-item reveal-delay-4 overflow-hidden rounded-[30px]">
           <CardContent className="grid gap-0 p-0 xl:grid-cols-[minmax(0,1fr)_320px]">
             <div className="flex min-h-[640px] flex-col">
-              <div className="border-b border-border/60 px-6 py-5">
-                <p className="text-[11px] uppercase tracking-[0.2em] text-primary">
+              <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border/60 px-6 py-5">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-primary">
+                    Новый диалог
+                  </p>
+                  <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-secondary">
+                    Гостевой чат поддержки 1С
+                  </h2>
+                  {guestEscalated ? (
+                    <Badge className="mt-3 border-warning/30 bg-warning/10 text-warning">
+                      Эскалировано оператору
+                    </Badge>
+                  ) : null}
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="new-dialog-button"
+                  onClick={handleNewGuestConversation}
+                >
+                  <RefreshCw className="h-4 w-4" />
                   Новый диалог
-                </p>
-                <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-secondary">
-                  Гостевой чат поддержки 1С
-                </h2>
-                {guestEscalated ? (
-                  <Badge className="mt-3 border-warning/30 bg-warning/10 text-warning">
-                    Эскалировано оператору
-                  </Badge>
-                ) : null}
+                </Button>
               </div>
               <ScrollArea className="flex-1">
                 <div className="space-y-4 p-6">
@@ -317,6 +345,16 @@ export function ChatPage({
                   {guestVisibleMessages.map((message) => (
                     <MessageBubble key={message.id} message={message} />
                   ))}
+                  {sendMutation.isPending ? (
+                    <div className="flex items-center gap-3 rounded-2xl border border-primary/15 bg-primary/5 p-4 text-sm text-secondary">
+                      <Spinner className="h-5 w-5 shrink-0" />
+                      <span>
+                        {pendingImage
+                          ? "Анализ изображения..."
+                          : "Агент формирует ответ..."}
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
               </ScrollArea>
               <Separator />
@@ -356,6 +394,7 @@ export function ChatPage({
                 />
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <Button
+                    type="button"
                     variant="outline"
                     onClick={() => setImageDialogOpen(true)}
                     disabled={guestClosed}
@@ -364,6 +403,7 @@ export function ChatPage({
                     Прикрепить скриншот
                   </Button>
                   <Button
+                    type="button"
                     onClick={() => sendMutation.mutate()}
                     disabled={sendMutation.isPending || guestClosed}
                   >

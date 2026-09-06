@@ -10,7 +10,11 @@ export default async function GuestChatRoute() {
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6 px-4 py-8 lg:px-0">
-      <PublicPortalHeader current="chat" signedIn={Boolean(user)} />
+      <PublicPortalHeader
+        current="chat"
+        signedIn={Boolean(user)}
+        className="reveal-item"
+      />
       <GuestChatIntro />
       <ChatPage mode="guest" user={user} />
     </div>

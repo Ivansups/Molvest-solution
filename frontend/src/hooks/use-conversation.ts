@@ -8,6 +8,7 @@ const GUEST_CONVERSATION_KEY = "guest_conversation_id";
 export function useConversation(): {
   conversationId: string | null;
   setConversationId: (conversationId: string) => void;
+  resetConversation: () => void;
 } {
   const [conversationId, setConversationIdState] = useState<string | null>(
     () =>
@@ -21,5 +22,10 @@ export function useConversation(): {
     setConversationIdState(nextConversationId);
   };
 
-  return { conversationId, setConversationId };
+  const resetConversation = (): void => {
+    window.sessionStorage.removeItem(GUEST_CONVERSATION_KEY);
+    setConversationIdState(null);
+  };
+
+  return { conversationId, setConversationId, resetConversation };
 }
