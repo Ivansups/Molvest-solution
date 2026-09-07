@@ -22,7 +22,14 @@ from app.core.gigachat_client import GigaChatService
 from app.db.base import Base
 from app.db.session import get_session
 from app.main import app
-from app.models import Chunk, Conversation, Document, Escalation, Message  # noqa: F401
+from app.models import (  # noqa: F401
+    ChannelThread,
+    Chunk,
+    Conversation,
+    Document,
+    Escalation,
+    Message,
+)
 from app.schemas.chat import ChatRequest
 
 TEST_DATABASE_URL = os.environ.get(

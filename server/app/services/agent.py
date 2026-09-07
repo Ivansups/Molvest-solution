@@ -37,6 +37,9 @@ class ConversationConflictError(Exception):
 async def run_chat_turn(
     request: ChatRequest,
     session: AsyncSession,
+    *,
+    channel: str | None = None,
+    channel_message_id: str | None = None,
 ) -> ChatResponse:
     """Прогоняет запрос через LangGraph, пишет диалог и мапит в контракт."""
     turn_started_at = utc_now()
@@ -59,6 +62,8 @@ async def run_chat_turn(
             user_text=_hold_user_text(request),
             user_image=None,
             user_created_at=turn_started_at,
+            channel=channel,
+            channel_message_id=channel_message_id,
         )
         logger.info(
             "draft hold conversation_id=%s без графа",
@@ -115,6 +120,8 @@ async def run_chat_turn(
             user_text=user_text,
             user_image=None,
             user_created_at=turn_started_at,
+            channel=channel,
+            channel_message_id=channel_message_id,
         )
         return ChatResponse(
             conversation_id=existing.id,
@@ -140,6 +147,8 @@ async def run_chat_turn(
         escalated=escalated,
         sources=persist_sources,
         user_created_at=turn_started_at,
+        channel=channel,
+        channel_message_id=channel_message_id,
     )
 
     return ChatResponse(

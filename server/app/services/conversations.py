@@ -67,6 +67,8 @@ def add_user_message(
     text: str | None,
     image_base64: str | None,
     created_at: datetime | None = None,
+    channel: str | None = None,
+    channel_message_id: str | None = None,
 ) -> Message:
     """Сообщение пользователя в диалоге (в памяти, без flush)."""
     message = Message(
@@ -74,6 +76,8 @@ def add_user_message(
         role=MessageRole.USER,
         content=text or "",
         image_url=image_base64,
+        channel=channel,
+        channel_message_id=channel_message_id,
     )
     # Метка начала хода: иначе user и assistant пишутся с одним utc_now
     # в конце и среднее время ответа всегда ~0.
@@ -136,6 +140,8 @@ async def persist_guest_hold(
     user_text: str | None,
     user_image: str | None,
     user_created_at: datetime | None = None,
+    channel: str | None = None,
+    channel_message_id: str | None = None,
 ) -> Conversation:
     """Пишет только реплику гостя в уже эскалированный диалог, без LLM."""
     session.add(
@@ -144,6 +150,8 @@ async def persist_guest_hold(
             text=user_text,
             image_base64=user_image,
             created_at=user_created_at,
+            channel=channel,
+            channel_message_id=channel_message_id,
         )
     )
     await session.commit()
@@ -167,6 +175,8 @@ async def persist_turn(
     escalated: bool,
     sources: list[Source],
     user_created_at: datetime | None = None,
+    channel: str | None = None,
+    channel_message_id: str | None = None,
 ) -> PersistedTurn:
     """Записывает один ход в одной транзакции и коммитит."""
     conversation = await find_or_create_conversation(
@@ -181,6 +191,8 @@ async def persist_turn(
             text=user_text,
             image_base64=user_image,
             created_at=user_created_at,
+            channel=channel,
+            channel_message_id=channel_message_id,
         )
     )
     assistant = add_assistant_message(
