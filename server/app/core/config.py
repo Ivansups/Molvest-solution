@@ -37,6 +37,17 @@ class Settings(BaseSettings):
     internal_service_token: str = ""
     # draft — generate только по кнопке оператора; auto — агент может ответить гостю.
     operator_assist_mode: Literal["draft", "auto"] = "draft"
+    # --- Bitrix24: канал сценария 1 (открытые линии) ---
+    bitrix_portal_url: str = ""
+    bitrix_app_user_id: str = ""
+    # Ключ исходящего REST-вебхука (Base URL /rest/{app_user_id}/{token}/).
+    bitrix_app_token: str = ""
+    # Секрет приложения для валидации входящих событий. Пустой — fail-closed:
+    # входящие события отклоняются (403).
+    bitrix_application_token: str = ""
+    # Код/id коннектора и линии открытой линии для исходящего imconnector.send.messages.
+    bitrix_connector_id: str = ""
+    bitrix_line_id: str = ""
 
     @field_validator("gigachat_embeddings_model")
     @classmethod

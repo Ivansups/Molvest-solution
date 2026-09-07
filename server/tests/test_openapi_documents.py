@@ -28,3 +28,6 @@ async def test_openapi_has_documents_chat_conversations_metrics() -> None:
     assert "/api/settings" in paths
     assert "get" in paths["/api/settings"]
     assert "put" in paths["/api/settings"]
+    assert "/webhook/bitrix" in paths
+    assert "/webhook/bitrix/openlines" in paths
+    assert "post" in paths["/webhook/bitrix/openlines"]
