@@ -15,6 +15,7 @@ from app.schemas.chat import ChatRequest, ChatResponse, Source
 from app.selectors.conversations import list_recent_messages
 from app.services.conversations import (
     GUEST_ESCALATION_TEXT,
+    IMAGE_HOLD_TEXT,
     persist_guest_hold,
     persist_turn,
 )
@@ -23,7 +24,6 @@ from app.services.runtime_settings import get_effective_operator_assist_mode
 logger = logging.getLogger(__name__)
 
 _HISTORY_LIMIT = 4
-_IMAGE_HOLD_TEXT = "Пользователь отправил изображение"
 
 
 class ConversationConflictError(Exception):
@@ -166,7 +166,7 @@ def _hold_user_text(request: ChatRequest) -> str | None:
     if request.text and request.text.strip():
         return request.text
     if request.image_base64:
-        return _IMAGE_HOLD_TEXT
+        return IMAGE_HOLD_TEXT
     return request.text
 
 
