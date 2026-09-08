@@ -57,6 +57,18 @@ class Settings(BaseSettings):
     # установку не роняем, бота не регистрируем (см. design.md D13–D14).
     bitrix_bot_code: str = "molvest_support"
     bitrix_handler_base_url: str = ""
+    # --- Redmine HelpDesk (сценарий 1, почта/тикет) ---
+    redmine_url: str = ""
+    redmine_api_key: str = ""
+    redmine_imap_host: str = ""
+    redmine_imap_port: int = 993
+    redmine_imap_user: str = ""
+    redmine_imap_password: str = ""
+    redmine_smtp_host: str = ""
+    redmine_smtp_port: int = 587
+    redmine_smtp_user: str = ""
+    redmine_smtp_password: str = ""
+    redmine_smtp_from: str = ""
 
     @field_validator("gigachat_embeddings_model")
     @classmethod

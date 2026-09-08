@@ -1,5 +1,6 @@
 """Точка входа FastAPI-приложения."""
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -17,6 +18,7 @@ from app.channels.bitrix.bot import router as bitrix_bot_router
 from app.channels.bitrix.install import router as bitrix_install_router
 from app.channels.bitrix.openlines import router as bitrix_openlines_router
 from app.channels.bitrix.webhook import router as bitrix_router
+from app.channels.redmine.webhook import router as redmine_router
 from app.core.config import settings
 from app.core.errors import error_envelope, register_error_handlers
 from app.core.logging import request_id_var, setup_logging
@@ -29,11 +31,24 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Предупреждает, если API слушает без служебного токена."""
+    from app.channels.redmine.imap import run_imap_poller
+
     if not settings.internal_service_token:
         logger.warning(
             "INTERNAL_SERVICE_TOKEN пуст: служебные маршруты открыты без токена"
         )
-    yield
+    poller: asyncio.Task[None] | None = None
+    if settings.redmine_imap_host:
+        poller = asyncio.create_task(run_imap_poller())
+    try:
+        yield
+    finally:
+        if poller is not None:
+            poller.cancel()
+            try:
+                await poller
+            except asyncio.CancelledError:
+                pass
 
 
 app = FastAPI(title="Molvest AI-Agent API", lifespan=lifespan)
@@ -49,6 +64,7 @@ app.include_router(bitrix_router)
 app.include_router(bitrix_openlines_router)
 app.include_router(bitrix_bot_router)
 app.include_router(bitrix_install_router)
+app.include_router(redmine_router)
 
 _SKIP_ACCESS_LOG = frozenset({"/health", "/docs", "/openapi.json", "/redoc"})
 
