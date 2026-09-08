@@ -38,9 +38,57 @@
 
 - [x] 7.1 `app/core/config.py`: добавить `bitrix_client_id`, `bitrix_client_secret`; `.env.example` — новые переменные без реальных значений
 - [x] 7.2 `app/models/bitrix_oauth.py`: `BitrixOAuthToken` (`member_id` unique, `access_token`, `refresh_token`, `expires_at`, `updated_at`); Alembic-миграция
-- [x] 7.3 `app/channels/bitrix/oauth.py`: `exchange_refresh_token(refresh_token) -> TokenPair` через `POST https://oauth.bitrix.info/oauth/token/` (`grant_type=refresh_token`, `client_id`, `client_secret`); секреты не логируются
-- [x] 7.4 `app/channels/bitrix/install.py`: `POST /webhook/bitrix/install` — читает `AUTH_ID`/`REFRESH_ID`/`AUTH_EXPIRES`/`member_id` из тела, upsert в `BitrixOAuthToken`, отвечает HTML с `BX24.installFinish()`; регистрация роутера в `main.py`
+- [x] 7.3 `app/channels/bitrix/oauth.py`: `exchange_refresh_token(refresh_token) -> TokenPair` через `POST https://oauth.bitrix24.tech/oauth/token/` (`grant_type=refresh_token`, `client_id`, `client_secret`); секреты не логируются
+- [x] 7.4 `app/channels/bitrix/install.py`: `POST /webhook/bitrix/install` — читает `auth[access_token]`/`auth[refresh_token]`/`auth[expires_in]`/`auth[member_id]` (`event=ONAPPINSTALL`) из тела, upsert в `BitrixOAuthToken`, отвечает HTML с `BX24.installFinish()`; регистрация роутера в `main.py`
 - [x] 7.5 `Bitrix24RestClient`: для `imconnector.*`-вызовов — авторизация через сохранённый `access_token` (`?auth=...`), а не `BITRIX_APP_TOKEN`; заодно закрыт SSRF в `download_image` (хост ссылки должен совпадать с доменом портала, редиректы отключены)
 - [x] 7.6 Тесты (`test_bitrix_oauth.py`, 7 шт.): install-хендшейк создаёт запись токена, 422 без обязательных полей, секреты не в ответе, `get_current_access_token` отдаёт валидный и обновляет протухший, `None` без установки, ошибка refresh поднимает `BitrixOAuthError`; `test_bitrix_channel.py` обновлён под новый обязательный `access_token`
-- [ ] 7.7 Ручная проверка на тестовом портале `b24-adkm07.bitrix24.ru`: завершить установку локального приложения через `/webhook/bitrix/install`, повторить `imconnector.register`/`imconnector.activate` — уже с OAuth-токеном, убедиться, что `WRONG_AUTH_TYPE` больше не возникает
+- [x] 7.7 Ручная проверка на тестовом портале `b24-adkm07.bitrix24.ru`: установка через `/webhook/bitrix/install` подтверждена (`event=ONAPPINSTALL`, реальный формат полей — обновлено в design.md/proposal.md/specs). `imconnector.register`/`imconnector.activate` с OAuth-токеном прошли успешно (`WRONG_AUTH_TYPE` не возникает). По пути найдено два недокументированных требования реального портала: (1) нужен доп. scope `placement` + `placement.bind` на `SETTING_CONNECTOR` до регистрации коннектора; (2) `imconnector.register` дополнительно требует явный `PLACEMENT_HANDLER` в теле вызова — одного `placement.bind` недостаточно, иначе `NO_PLACEMENT_HANDLER`
 - [x] 7.8 Quality gate: `ruff check . && ruff format --check . && mypy . && pytest && alembic check` — 126 тестов зелёных на реальном Postgres, миграция 004 накатилась чисто
+
+## 8. Бот открытой линии рядом с коннектором (сценарий 1 ТЗ, design.md D10–D14)
+
+Кастомный коннектор не трогаем. Рядом — окно клиента: штатный онлайн-чат
+линии + `imbot`, чтобы сотрудник писал в Bitrix и получал ответ агента в
+том же диалоге.
+
+- [x] 8.1 `app/core/config.py` + `.env.example`: `bitrix_bot_code`,
+      `bitrix_handler_base_url`; пустой handler base на регистрации бота —
+      явное предупреждение в лог, без падения install. Проверить загрузкой
+      из env, в образце нет секретов
+- [x] 8.2 Модель: nullable `openlines_bot_id` у `BitrixOAuthToken` + Alembic
+      миграция с понятным именем. Проверить `uv run alembic check`
+- [x] 8.3 `channels/bitrix/schemas.py`: либеральный парсинг `ONIMBOTMESSAGEADD`
+      (DIALOG_ID, MESSAGE, MESSAGE_ID, FROM_USER_ID, auth.application_token /
+      domain; form PHP-style и JSON). Юнит-тест полного и минимального события
+- [x] 8.4 `Bitrix24RestClient`: `register_openlines_bot`, `list_bots`,
+      `send_bot_message` → `imbot.register` / `imbot.bot.list` /
+      `imbot.message.add` через OAuth (`?auth=`), токен не в логах. Юнит-тест
+      с `httpx.MockTransport`
+- [x] 8.5 После `store_installation`: найти бота по `BITRIX_BOT_CODE` или
+      зарегистрировать с `EVENT_MESSAGE_ADD={BITRIX_HANDLER_BASE_URL}/webhook/bitrix/bot`,
+      сохранить `openlines_bot_id`. Повтор install не создаёт второго бота.
+      Тест на первую установку и на reuse
+- [x] 8.6 `POST /webhook/bitrix/bot`: та же fail-closed проверка токена, что у
+      openlines (403 без записи); 422 на кривой формат; делегирует в сервис.
+      Зарегистрировать роутер в `main.py`. Тесты 403/422 + путь в OpenAPI
+- [x] 8.7 `app/services/ol_bot.py` по образцу `openlines.py`, без рефакторинга
+      коннектора: `channel="bitrix_ol_bot"`; дубль → `duplicate`; автор = bot
+      id → игнор без персиста; оператор → `Message(role=operator)` без графа
+      и без REST; гость → `run_chat_turn`; `escalated=False` → после commit
+      `imbot.message.add` в тот же `DIALOG_ID`; `escalated=True` → исходящего
+      нет. Не вызывать `imconnector.send.messages`. Тесты с mock-клиентом
+      (порядок commit до send, эхо бота, эскалация, маппинг не пересекается
+      с `bitrix_openlines`)
+- [x] 8.8 `README.md`: два контура (коннектор vs бот+онлайн-чат); scope `imbot`;
+      включить онлайн-чат на `BITRIX_LINE_ID`; проверка «написал в окне Bitrix
+      → ответ бота в том же диалоге». Существующий раздел коннектора не
+      удалять
+- [x] 8.9 `server/tests/test_bitrix_ol_bot.py` + регрессия
+      `test_bitrix_channel.py`: коннекторный путь после добавления бота жив.
+      Дубль события вызвать дважды. Секреты не в ответах и не в логах
+- [x] 8.10 Quality gate после правок Python: `uv run ruff check . && uv run ruff format --check . && uv run mypy . && uv run pytest && uv run alembic check`
+- [ ] 8.11 Ручная проверка на `b24-adkm07.bitrix24.ru`: переустановка с scope
+      `imbot`, бот появляется, в онлайн-чате линии сообщение клиента получает
+      ответ агента в том же окне; коннекторный диалог по-прежнему принимает
+      `imconnector.send.messages`. Зафиксировать расхождения формата события
+      в design.md, как в 7.7

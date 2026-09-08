@@ -86,7 +86,7 @@ The system SHALL read the portal URL, application user id, application token, an
 
 ### Requirement: Методы с контекстом приложения авторизуются через OAuth
 
-Bitrix24 REST methods that create or operate system-wide bot/connector resources (`imconnector.*`, `imbot.*`) require an installed OAuth application context; a static incoming-webhook token is rejected by the portal for these methods regardless of granted scope. The system SHALL provide `POST /webhook/bitrix/install` to receive the initial installation payload (`AUTH_ID`, `REFRESH_ID`, `AUTH_EXPIRES`, `member_id`) from a local server-type application, SHALL persist the resulting token pair keyed by `member_id`, and SHALL respond with a page that completes the Bitrix installation handshake. For outbound calls to `imconnector.*`/`imbot.*` methods, the system SHALL use the stored OAuth access token rather than the static webhook token, and SHALL transparently refresh an expired access token via the stored refresh token before retrying the call once.
+Bitrix24 REST methods that create or operate system-wide bot/connector resources (`imconnector.*`, `imbot.*`) require an installed OAuth application context; a static incoming-webhook token is rejected by the portal for these methods regardless of granted scope. The system SHALL provide `POST /webhook/bitrix/install` to receive the initial installation payload (`event=ONAPPINSTALL`, `auth[access_token]`, `auth[refresh_token]`, `auth[expires_in]`, `auth[member_id]`) from a local server-type application, SHALL persist the resulting token pair keyed by `member_id`, and SHALL respond with a page that completes the Bitrix installation handshake. For outbound calls to `imconnector.*`/`imbot.*` methods, the system SHALL use the stored OAuth access token rather than the static webhook token, and SHALL transparently refresh an expired access token via the stored refresh token before retrying the call once.
 
 #### Scenario: Installation stores the token pair
 
@@ -102,3 +102,12 @@ Bitrix24 REST methods that create or operate system-wide bot/connector resources
 
 - **WHEN** the system calls any `imconnector.*` or `imbot.*` method
 - **THEN** it authenticates with the stored OAuth access token, not `BITRIX_APP_TOKEN`
+
+### Requirement: Кастомный коннектор остаётся рядом с ботом открытой линии
+
+The custom Open Lines connector (`POST /webhook/bitrix/openlines`, outbound `imconnector.send.messages`, `channel="bitrix_openlines"`) SHALL remain available after the Open Lines bot is added. Adding the bot SHALL NOT remove, rename, or reuse that webhook path, that channel value, or that outbound method.
+
+#### Scenario: Коннекторный webhook не исчезает после появления бота
+
+- **WHEN** the Open Lines bot webhook and `imbot.message.add` delivery are present
+- **THEN** `POST /webhook/bitrix/openlines` still accepts connector events and still delivers replies with `imconnector.send.messages` under `channel="bitrix_openlines"`

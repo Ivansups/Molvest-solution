@@ -22,6 +22,9 @@
 - Ответ агента в тот же диалог: после commit состояния — `imconnector.send.messages`
   через единый Bitrix REST-клиент в `channels/bitrix/rest.py`.
 - Секреты только env `BITRIX_*`; лог и ответы без токена.
+- Параллельно коннектору — контур сценария 1 ТЗ: бот открытой линии + штатный
+  онлайн-чат, чтобы клиент печатал в окне Bitrix и получал ответ там же
+  (`imbot.message.add`). Кастомный коннектор не удаляем.
 
 **Non-Goals:**
 
@@ -29,6 +32,10 @@
 - Redmine, файловые хранилища, токены в `/settings`, поллинг.
 - Гарантированная доставка (retry/queue) исходящих REST-вызовов — только
   попытка после commit + лог ошибки.
+- Сценарий 2 на живом портале (черновик оператору в чужом чате) — не этот
+  change.
+- Удаление или замена кастомного коннектора. Онлайн-чат на портале включается
+  вручную в контакт-центре, виджет сайта мы не генерируем.
 
 ## Decisions
 
@@ -132,6 +139,13 @@ warning, роутер не падает. Демо сценария 1 — тек�
   демо (как в сценарии 2), catch не добавляем.
 - [Вложение не скачается в демо] → fallback на текст с warning, сценарий 1 не
   блокируется.
+- [Формат `ONIMBOTMESSAGEADD` на живом портале может отличаться от доки] →
+  либеральный парсинг; расхождения фиксируем в design после задачи 8.11, как
+  с install-payload в D8.
+- [Бот не в очереди линии — клиент пишет, ответа нет] → README: посадка в
+  очередь контакт-центра вручную; не блокируем код обходным API до проверки.
+- [Пустой `BITRIX_HANDLER_BASE_URL`] → install проходит, бот не регистрируется,
+  в логе warning без секрета; коннектор не страдает.
 
 ## Migration Plan
 
@@ -182,18 +196,24 @@ warning, роутер не падает. Демо сценария 1 — тек�
    портале) даёт `client_id`/`client_secret` — новые `BITRIX_CLIENT_ID`,
    `BITRIX_CLIENT_SECRET` в конфиге.
 2. `POST /webhook/bitrix/install` — путь первоначальной установки. Для
-   локального серверного приложения Bitrix присылает сюда `AUTH_ID`
-   (access token), `REFRESH_ID` (refresh token), `AUTH_EXPIRES`, `member_id`
-   прямо в теле POST — без отдельного шага обмена `code`. Хендлер сохраняет
-   токен и отвечает HTML, вызывающим `BX24.installFinish()` (иначе Bitrix
-   считает установку незавершённой).
+   локального серверного приложения (с выключенной галкой «Приложение само
+   завершает установку») Bitrix шлёт `event=ONAPPINSTALL`, form-urlencoded, с
+   PHP-style вложенными ключами `auth[access_token]`, `auth[refresh_token]`,
+   `auth[expires_in]`, `auth[member_id]` — подтверждено живым порталом
+   `b24-adkm07.bitrix24.ru`, отличается от более старого плоского формата
+   `AUTH_ID`/`REFRESH_ID`, который встречается в части документации/примеров.
+   Хендлер сохраняет токен и отвечает HTML, вызывающим `BX24.installFinish()`
+   (иначе Bitrix считает установку незавершённой).
 3. Новая таблица `bitrix_oauth_tokens` (`member_id`, `access_token`,
    `refresh_token`, `expires_at`) — токены не годятся для статичного env:
    `access_token` живёt ~1 час, `refresh_token` меняется при каждом обновлении.
 4. `app/channels/bitrix/oauth.py` — обмен `refresh_token` на новую пару через
-   `POST https://oauth.bitrix.info/oauth/token/` (`grant_type=refresh_token`,
-   `client_id`, `client_secret`); вызывается лениво при `expired_token` от
-   REST или проактивно по `expires_at`.
+   `POST https://oauth.bitrix24.tech/oauth/token/` (`grant_type=refresh_token`,
+   `client_id`, `client_secret`) — хост подтверждён полем
+   `auth[server_endpoint]` реального установочного payload'а
+   (`https://oauth.bitrix24.tech/rest/`), не устаревший `oauth.bitrix.info`;
+   вызывается лениво при `expired_token` от REST или проактивно по
+   `expires_at`.
 5. `Bitrix24RestClient` для `imconnector.*` переключается на
    `https://{domain}/rest/{method}?auth={access_token}`; при `expired_token`
    — один retry после обновления токена.
@@ -206,3 +226,122 @@ warning, роутер не падает. Демо сценария 1 — тек�
 `imconnector`/`imbot` использовать что-то, не требующее app-контекста —
 проверено эмпирически, что и `imbot`, и `imconnector` оба требуют OAuth;
 альтернативы внутри тех же REST-групп нет.
+
+## D9. `imconnector.register` требует scope `placement` + явный `PLACEMENT_HANDLER`
+
+Подтверждено на живом портале после D8: даже с OAuth-токеном
+`imconnector.register` падает `NO_PLACEMENT_HANDLER`, пока не выполнены оба
+условия:
+
+1. Приложению нужен дополнительный scope `placement` («Встраивание
+   приложений»), сверх `imconnector`/`imopenlines`/`im`/`disk` — без него
+   `placement.bind` падает `insufficient_scope`.
+2. `placement.bind` на код `SETTING_CONNECTOR` (не `SALESCENTER_CONNECTOR`,
+   как можно предположить по названию раздела «Salescenter» в интерфейсе) с
+   `HANDLER` = наш `/webhook/bitrix/openlines`.
+3. Даже после успешного `placement.bind`, сам `imconnector.register` всё
+   равно требует **тот же URL повторно**, явным параметром
+   `PLACEMENT_HANDLER` в теле вызова — привязки плейсмента одной недостаточно.
+
+После выполнения обоих шагов `imconnector.register` и `imconnector.activate`
+(с `LINE` = id открытой линии) проходят успешно. Смена scope у уже
+установленного приложения требует повторной установки (кнопка
+«Переустановить» в карточке приложения) — старый `access_token` не получает
+новых прав задним числом.
+
+## D10. Два контура рядом: коннектор остаётся, бот закрывает окно клиента ТЗ
+
+Кастомный коннектор (`bitrix_openlines` / `imconnector.send.messages`)
+полезен как труба «внешняя система → оператор», но **не даёт окна, куда
+сотрудник пишет как клиент**. Это не баг реализации — так устроен REST-
+коннектор. Формулировка сценария 1 ТЗ («пишет вопрос текстом в Bitrix24»)
+требует штатную клиентскую поверхность.
+
+Поэтому рядом, без удаления коннектора:
+
+| | Кастомный коннектор (есть) | Бот открытой линии (добавляем) |
+| --- | --- | --- |
+| Где пишет клиент | Нет UI в Bitrix; только API / внешний канал | Онлайн-чат линии и диалог с ботом в Bitrix |
+| Вход | `POST /webhook/bitrix/openlines` | `POST /webhook/bitrix/bot` (`ONIMBOTMESSAGEADD`) |
+| `channel` | `bitrix_openlines` | `bitrix_ol_bot` |
+| Исходящее | `imconnector.send.messages` | `imbot.message.add` |
+| Ядро | `run_chat_turn` | тот же `run_chat_turn` |
+
+Оркестрация бота — новый `services/ol_bot.py` по образцу `openlines.py`, без
+рефакторинга рабочего коннектора. Общие инварианты те же: дубль по
+`(channel, channel_message_id)`, маппинг через `ChannelThread`, внешний REST
+после commit, оператор без графа, эскалация без автоответа.
+
+Альтернатива «переделать коннектор в бота» отклонена: коннектор уже
+зарегистрирован на живом портале (D8–D9), для внешних каналов он останется
+нужен; ТЗ просит второй вход, не замену.
+
+## D11. Клиентская поверхность — штатный онлайн-чат, не наш HTML
+
+Код не рисует чат Bitrix. На тестовом портале в контакт-центре на **ту же**
+`BITRIX_LINE_ID` включается канал «Онлайн-чат» (`livechat`). Сотрудник /
+жюри открывают виджет или тестовое окно линии и пишут как клиент. Bitrix
+сам кладёт это в открытую линию и зовёт нашего бота.
+
+Регистрация бота (`imbot.register`, тип open line, `OPENLINE=Y`) делает
+агента участником линии. Посадку бота в очередь линии при необходимости
+дожимаем вручную в UI портала (как `placement` для коннектора) — если REST
+привязки не хватит, фиксируем шаги в README, не плодим обходные API.
+
+Альтернатива «наш виджет = клиент ТЗ» отклонена для этого change: виджет
+уже закрывает демо, жюри по ТЗ должно увидеть ответ **в Bitrix**.
+
+## D12. Контракт бота — ONIMBOTMESSAGEADD, исходящее imbot.message.add
+
+Вход (либеральный парсинг, как у коннектора): `event=ONIMBOTMESSAGEADD`,
+`data[PARAMS][DIALOG_ID]`, `MESSAGE` / `MESSAGE_ID` / `FROM_USER_ID`,
+`auth[application_token]` / `domain` / `member_id`. PHP-style form и JSON —
+оба. Join/welcome без текста вопроса — не `run_chat_turn`.
+
+Авторство:
+
+- id зарегистрированного бота → игнор (иначе эхо своего `imbot.message.add`);
+- оператор открытой линии → `Message(role=operator)`, без графа и без исходящего;
+- иначе гость → `run_chat_turn(..., channel="bitrix_ol_bot", ...)`.
+
+Исходящее после commit: `imbot.message.add` с `BOT_ID`, `DIALOG_ID`,
+`MESSAGE`. Не `imconnector.send.messages` — тот метод рисует сообщение
+*клиента* оператору, а не ответ бота клиенту. OAuth как в D8. Ошибка REST
+→ `processed` + `delivered=false` + лог без токена.
+
+Картинка — тот же best-effort, что D6.
+
+## D13. Регистрация бота при install, bot id хранится у OAuth-записи
+
+После успешного `store_installation` (и при переустановке) вызываем
+`imbot.register`:
+
+- `CODE` = `BITRIX_BOT_CODE` (env, по умолчанию осмысленный код вроде
+  `molvest_support`);
+- `EVENT_MESSAGE_ADD` = `{BITRIX_HANDLER_BASE_URL}/webhook/bitrix/bot`;
+- тип open line / `OPENLINE=Y`.
+
+`BITRIX_HANDLER_BASE_URL` — публичный URL нашего API (ngrok на демо). Без
+него регистрировать нечего: Bitrix должен достучаться до хендлера снаружи.
+
+`imbot.register` не идемпотентен — повтор создаёт второго бота. Поэтому
+`bot_id` пишем в `bitrix_oauth_tokens.openlines_bot_id`. Если бот с тем же
+`CODE` уже есть (`imbot.bot.list`) — берём его id, не регистрируем снова.
+
+Scope: к списку D9 добавить `imbot`. Смена scope = переустановка приложения
+(уже зафиксировано в D9).
+
+Альтернатива «хранить BOT_ID только в env» отклонена: id выдаёт портал после
+register, в git его нет, при переустановке он может смениться.
+
+## D14. Конфиг бота
+
+Новые env (образцы без секретов в `.env.example`):
+
+- `BITRIX_BOT_CODE` — код бота на портале;
+- `BITRIX_HANDLER_BASE_URL` — публичная база URL хендлеров.
+
+Существующие `BITRIX_LINE_ID` / OAuth / `BITRIX_APPLICATION_TOKEN`
+переиспользуются. README: два контура (коннектор vs бот+онлайн-чат), scope
+`imbot`, как открыть тестовый онлайн-чат и проверить «написал → бот ответил
+в том же окне».

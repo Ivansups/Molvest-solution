@@ -28,6 +28,12 @@
   `channel_message_id` — без дублирования графа.
 - **Конфигурация только через env**: `BITRIX_PORTAL_URL`, `BITRIX_APP_USER_ID`,
   `BITRIX_APP_CODE`/OAuth/webhook-токен — ничего в `/settings`, репо и логах.
+- **Параллельный контур сценария 1 ТЗ (не вместо коннектора)**: регистрация
+  бота открытой линии (`imbot.register`), входящий `POST /webhook/bitrix/bot`
+  на событие `ONIMBOTMESSAGEADD`, ответ через `imbot.message.add` в тот же
+  `DIALOG_ID`. Клиентская поверхность — штатный онлайн-чат линии (настройка
+  портала, не код). Тот же `run_chat_turn`, отдельное значение `channel`,
+  чтобы маппинги коннектора и бота не пересекались.
 
 ## Capabilities
 
@@ -37,32 +43,37 @@
   приём и валидация входящих событий Open Lines, маппинг id диалога ОЛ →
   `conversation_id` с идемпотентностью повторов, отправка ответа агента в тот
   же диалог через REST, конфигурация из `BITRIX_*` env.
+- `bitrix24-openlines-bot`: окно клиента по формулировке ТЗ — бот открытой
+  линии рядом с кастомным коннектором. Входящее `ONIMBOTMESSAGEADD`, ответ
+  `imbot.message.add` в тот же диалог, эскалация без автоответа, регистрация
+  бота при установке приложения. Коннектор остаётся отдельным контуром.
 
 ### Modified Capabilities
 
-- (пусто: существующий битрикс-контур задан несинхронизированными дельтами
-  `live-bitrix-thread-assist`, а не спецификациями в `openspec/specs/`; этот
-  change добавляет новую capability, не меняя требований существующих specs)
+- `bitrix24-channel`: явное требование — кастомный коннектор не удаляется и
+  не подменяется ботом (тот же webhook, тот же `channel`, тот же исходящий
+  метод). Остальной контур коннектора без изменений.
 
 ## Impact
 
-- `server/app/channels/bitrix/` — расширение пакета: REST-клиент Bitrix
-  (`rest.py`), схемы реального формата событий, роутер webhook Open Lines.
-- `server/app/services/` — оркестрация входящего события через `run_chat_turn`
-  и маппинг диалога (по образцу `services/live_thread.py`).
-- `server/app/models/` — таблица `bitrix_dialog_id` (если решено в design) +
-  Alembic миграция; нативный маппинг `ChannelThread` — без изменений.
-- `server/app/core/config.py`, `.env.example` — `BITRIX_*` переменные.
-- `README.md` — раздел «Интеграция Bitrix24»: нужные env и права приложения
-  (Open Lines, `imconnector`).
-- Тесты: `server/tests/test_bitrix_channel.py` (валидация токена, маппинг,
-  идемпотентность повтора id, исходящий REST-вызов, отсутствие секретов в
-  ответах/логах).
-- Вне scope: сценарий 2 на живом портале (таск #19 закрыт имитацией), Redmine,
-  токены в `/settings`, обработка вложений вне поля текущего webhook.
+- `server/app/channels/bitrix/` — REST-клиент, схемы Open Lines, роутер
+  `/webhook/bitrix/openlines`; **дополнительно** схемы `ONIMBOTMESSAGEADD`,
+  `POST /webhook/bitrix/bot`, `imbot.register` / `imbot.message.add`,
+  регистрация бота после install.
+- `server/app/services/` — `openlines.py` (коннектор) + `ol_bot.py` (бот,
+  `channel="bitrix_ol_bot"`), без рефакторинга коннектора.
+- `server/app/models/` — `bitrix_oauth_tokens.openlines_bot_id` + миграция.
+  Маппинг диалогов по-прежнему `ChannelThread`.
+- `server/app/core/config.py`, `.env.example` — `BITRIX_*`, включая
+  `BITRIX_BOT_CODE` и `BITRIX_HANDLER_BASE_URL`.
+- `README.md` — два контура: коннектор и бот+онлайн-чат; scope `imbot`.
+- Тесты: `test_bitrix_channel.py` (коннектор) и `test_bitrix_ol_bot.py`
+  (бот: токен, маппинг, дубль, `imbot.message.add`, эскалация, эхо бота,
+  коннекторный путь жив).
+- Вне scope: сценарий 2 на живом портале, Redmine, удаление кастомного
+  коннектора, токены в `/settings`. Вложения у бота — тот же best-effort.
 - **Дополнено после проверки на живом портале** (см. `design.md` D8):
-  `imconnector.*`/`imbot.*` требуют OAuth-контекст приложения, статический
-  вебхук-токен для них не проходит авторизацию вне зависимости от scope.
-  Добавлены `POST /webhook/bitrix/install`, таблица `bitrix_oauth_tokens`,
-  обмен/обновление токена через `oauth.bitrix.info` — см. группу задач 7 в
-  `tasks.md`.
+  `imconnector.*`/`imbot.*` требуют OAuth-контекст приложения — группа задач 7.
+- **Дополнено после ручной проверки коннектора** (см. `design.md` D10):
+  коннектор не даёт окна клиента по ТЗ; рядом бот открытой линии + штатный
+  онлайн-чат — группа задач 8.
