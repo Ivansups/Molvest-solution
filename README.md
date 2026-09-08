@@ -91,6 +91,79 @@ make install        # uv sync + pnpm install
 > `make api` **сам** подставляет `localhost`, не меняйте `.env` ради локального uvicorn.
 > Если заменить `db` → `localhost` в `.env`, контейнер API перестанет видеть Postgres.
 
+## Интеграция Bitrix24 (открытые линии)
+
+**Куда тыкать на портале, ngrok, `.env` и два контура** — пошагово:
+[`docs/BITRIX.md`](docs/BITRIX.md). Сценарий 1 по ТЗ:
+[`docs/SCENARIOS.md`](docs/SCENARIOS.md).
+
+Два контура рядом. Ядро агента одно (`run_chat_turn`).
+
+| Контур | Где пишет клиент | Вход | Ответ |
+| --- | --- | --- | --- |
+| Бот открытой линии (ТЗ) | Онлайн-чат линии в Bitrix | `POST /webhook/bitrix/bot` | `imbot.message.add` |
+| Кастомный коннектор | Сторонняя платформа / API | `POST /webhook/bitrix/openlines` | `imconnector.send.messages` |
+
+Переменные окружения (`BITRIX_*`, см. [`.env.example`](.env.example)):
+
+| Переменная | Назначение |
+| --- | --- |
+| `BITRIX_PORTAL_URL` | базовый URL портала, напр. `https://molvest.bitrix24.ru` |
+| `BITRIX_APP_USER_ID` | пользователь приложения для исходящих сообщений |
+| `BITRIX_APP_TOKEN` | ключ исходящего REST-вебхука (Base URL `/rest/…`) |
+| `BITRIX_APPLICATION_TOKEN` | секрет валидации входящих событий; **не пустое** — иначе 403 |
+| `BITRIX_CONNECTOR_ID` | код/`id` коннектора открытой линии |
+| `BITRIX_LINE_ID` | линия открытой линии |
+| `BITRIX_CLIENT_ID` / `BITRIX_CLIENT_SECRET` | OAuth локального приложения |
+| `BITRIX_BOT_CODE` | код бота (`imbot.register`), по умолчанию `molvest_support` |
+| `BITRIX_HANDLER_BASE_URL` | публичный URL API (ngrok). Пусто — бот не регистрируется |
+
+Права приложения: `imconnector`, `imopenlines`, `imbot`, `im`, `disk`,
+`placement`. Смена scope у уже установленного приложения — кнопка
+«Переустановить».
+
+### Бот + онлайн-чат (окно клиента по ТЗ)
+
+1. В карточке приложения выдать scope `imbot` и переустановить.
+2. Задать `BITRIX_HANDLER_BASE_URL=https://<ngrok>` и `BITRIX_BOT_CODE`.
+3. Установка приложения дергает `POST /webhook/bitrix/install` — бот
+   регистрируется сам (повторно не плодится).
+4. Контакт-центр → та же `BITRIX_LINE_ID` → включить канал «Онлайн-чат».
+   Если бот не в очереди линии — добавить вручную.
+5. Открыть тестовый онлайн-чат, написать как клиент. Ответ агента приходит
+   в то же окно. Ниже порога — тишина гостю, черновик в `/operator`.
+   Скриншот в том же чате идёт в vision. После эскалации в `draft` бот
+   больше не отвечает гостю (сценарий 2); для демо Q&A — `OPERATOR_ASSIST_MODE=auto`.
+
+### Кастомный коннектор (сторонние платформы)
+
+1. В настройках коннектора указать
+   `https://<наш-хост>/webhook/bitrix/openlines`.
+2. Внешний канал шлёт сообщения через `imconnector.send.messages`.
+   Окна клиента в Bitrix у этого контура нет — это ожидаемо.
+
+Проверка: повтор той же доставки даёт `status: "duplicate"` без повторного
+запуска графа. Секреты ни в UI, ни в `/settings`, ни в логи не попадают.
+
+## Интеграция Redmine HelpDesk
+
+Входящий контракт для тестов и демо без почтового ящика:
+`POST /webhook/redmine` (тот же служебный заголовок `X-Internal-Token`,
+что у `POST /webhook/bitrix`). Тело: `ticket_id`, `message_id`,
+`sender` (`user` / `operator`), `text`. Ответ агента — заметка в тикет
+(`REDMINE_URL` + `REDMINE_API_KEY`) после записи в БД. Ниже порога в тикет
+гостю ничего не пишем, черновик — в консоли.
+
+IMAP (`REDMINE_IMAP_*`) опционален: пустой хост — поллера нет, вебхук жив.
+
+| Переменная | Назначение |
+| --- | --- |
+| `REDMINE_URL` | базовый URL Redmine без хвоста |
+| `REDMINE_API_KEY` | ключ REST для заметки в тикет |
+| `REDMINE_IMAP_HOST` | хост ящика; пусто — не опрашиваем почту |
+| `REDMINE_IMAP_PORT` / `USER` / `PASSWORD` | IMAP |
+| `REDMINE_SMTP_*` | запасной исходящий путь, если REST не задан |
+
 ## Команды Make
 
 `make` без аргументов печатает список.

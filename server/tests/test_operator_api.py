@@ -56,11 +56,11 @@ async def _escalated_conversation(
 
 
 def _mock_suggest(monkeypatch: MonkeyPatch, answer: str) -> None:
-    import app.services.operator as operator_service
+    import app.services.draft as draft_service
     from app.agent.state import RetrievedChunk
 
     monkeypatch.setattr(
-        operator_service,
+        draft_service,
         "make_retriever",
         lambda llm, cfg: AsyncMock(
             return_value=[
@@ -74,7 +74,7 @@ def _mock_suggest(monkeypatch: MonkeyPatch, answer: str) -> None:
         ),
     )
     monkeypatch.setattr(
-        operator_service,
+        draft_service,
         "generate",
         AsyncMock(return_value={"answer": answer, "confidence": 0.9}),
     )
@@ -265,9 +265,9 @@ async def test_suggest_without_guest_message_409(
     db_session.add(conversation)
     await db_session.commit()
     generate = AsyncMock(return_value={"answer": "нет"})
-    import app.services.operator as operator_service
+    import app.services.draft as draft_service
 
-    monkeypatch.setattr(operator_service, "generate", generate)
+    monkeypatch.setattr(draft_service, "generate", generate)
     response = await api_client.post(
         f"/api/conversations/{conversation.id}/suggest",
         json={"installation_id": str(INSTALL)},

@@ -404,6 +404,7 @@ async def test_draft_hold_image_without_text_keeps_placeholder(
     from app.models.enums import ConversationStatus, MessageRole
     from app.models.message import Message
     from app.services.conversation_status import transition_status
+    from app.services.conversations import IMAGE_HOLD_TEXT
 
     conversation = Conversation(
         installation_id=UUID(_INSTALLATION_ID),
@@ -439,7 +440,7 @@ async def test_draft_hold_image_without_text_keeps_placeholder(
             )
         ).all()
     )
-    assert rows[-1].content == agent_service._IMAGE_HOLD_TEXT
+    assert rows[-1].content == IMAGE_HOLD_TEXT
     assert rows[-1].image_url is None
     llm_mock.generate.assert_not_called()
 

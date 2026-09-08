@@ -37,6 +37,38 @@ class Settings(BaseSettings):
     internal_service_token: str = ""
     # draft — generate только по кнопке оператора; auto — агент может ответить гостю.
     operator_assist_mode: Literal["draft", "auto"] = "draft"
+    # --- Bitrix24: канал сценария 1 (открытые линии) ---
+    bitrix_portal_url: str = ""
+    bitrix_app_user_id: str = ""
+    # Ключ исходящего REST-вебхука (Base URL /rest/{app_user_id}/{token}/).
+    bitrix_app_token: str = ""
+    # Секрет приложения для валидации входящих событий. Пустой — fail-closed:
+    # входящие события отклоняются (403).
+    bitrix_application_token: str = ""
+    # Код/id коннектора и линии открытой линии для исходящего imconnector.send.messages.
+    bitrix_connector_id: str = ""
+    bitrix_line_id: str = ""
+    # OAuth локального приложения: imconnector.*/imbot.* требуют контекст
+    # приложения, статический bitrix_app_token для них не подходит (см.
+    # openspec/changes/bitrix24-channel/design.md, D8).
+    bitrix_client_id: str = ""
+    bitrix_client_secret: str = ""
+    # Код бота открытой линии (imbot.register). Пустой handler URL —
+    # установку не роняем, бота не регистрируем (см. design.md D13–D14).
+    bitrix_bot_code: str = "molvest_support"
+    bitrix_handler_base_url: str = ""
+    # --- Redmine HelpDesk (сценарий 1, почта/тикет) ---
+    redmine_url: str = ""
+    redmine_api_key: str = ""
+    redmine_imap_host: str = ""
+    redmine_imap_port: int = 993
+    redmine_imap_user: str = ""
+    redmine_imap_password: str = ""
+    redmine_smtp_host: str = ""
+    redmine_smtp_port: int = 587
+    redmine_smtp_user: str = ""
+    redmine_smtp_password: str = ""
+    redmine_smtp_from: str = ""
 
     @field_validator("gigachat_embeddings_model")
     @classmethod
