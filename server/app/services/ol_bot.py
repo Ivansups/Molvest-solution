@@ -10,15 +10,19 @@ from uuid import UUID, uuid5
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.channels.bitrix.attachments import (
+    fetch_attachment_base64,
+    first_image_ref,
+)
+from app.channels.bitrix.notify import try_send_operator_note
 from app.channels.bitrix.oauth import get_current_access_token
 from app.channels.bitrix.register_bot import get_current_bot_id
 from app.channels.bitrix.rest import (
     Bitrix24RestClient,
     Bitrix24RestError,
-    build_rest_client,
+    maybe_build_rest_client,
 )
 from app.channels.bitrix.schemas import BitrixBotEvent, BitrixBotResponse
-from app.core.config import settings
 from app.models.channel import ChannelThread
 from app.models.conversation import Conversation
 from app.models.enums import ConversationStatus, MessageRole
@@ -26,6 +30,11 @@ from app.models.message import Message
 from app.rag.retrieval import workspace_to_installation_id
 from app.schemas.chat import ChatRequest
 from app.services.agent import ConversationConflictError, run_chat_turn
+from app.services.channel_handoff import (
+    fill_escalation_draft,
+    persist_draft_followup,
+    should_draft_followup,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +99,7 @@ async def _process_guest(
     dialog_id: str,
     message_id: str,
 ) -> BitrixBotResponse:
-    client = _maybe_build_client()
+    client = maybe_build_rest_client()
     try:
         return await _run_guest(
             session,
@@ -119,20 +128,42 @@ async def _run_guest(
         installation_id=installation_id,
         dialog_id=dialog_id,
     )
+    conversation: Conversation | None = None
     if mapping is not None:
         conversation = await session.get(Conversation, mapping.conversation_id)
         if conversation is None or conversation.status == ConversationStatus.RESOLVED:
             raise ConversationConflictError("Диалог уже закрыт")
-        conversation_id: UUID | None = conversation.id
-    else:
-        conversation_id = None
+        if await should_draft_followup(session, conversation):
+            url, file_id = _image_ref(event)
+            image = await fetch_attachment_base64(
+                client=client, session=session, url=url, file_id=file_id
+            )
+            draft = await persist_draft_followup(
+                session,
+                conversation=conversation,
+                user_text=_text(event),
+                user_image=image,
+                channel=_CHANNEL,
+                channel_message_id=message_id,
+            )
+            await try_send_operator_note(
+                session, client, dialog_id=dialog_id, text=draft
+            )
+            return BitrixBotResponse(
+                conversation_id=conversation.id,
+                status="processed",
+                escalated=conversation.status == ConversationStatus.ESCALATED,
+            )
 
+    url, file_id = _image_ref(event)
     request = ChatRequest(
         message_id=uuid5(_CHAT_MSG_NS, message_id),
         workspace_id=_domain(event),
-        conversation_id=conversation_id,
+        conversation_id=None if conversation is None else conversation.id,
         text=_text(event),
-        image_base64=await _fetch_image(event, client),
+        image_base64=await fetch_attachment_base64(
+            client=client, session=session, url=url, file_id=file_id
+        ),
         user_id=_from_user_id(event) or _DEFAULT_USER,
     )
     response = await run_chat_turn(
@@ -159,6 +190,12 @@ async def _run_guest(
             response.conversation_id,
             message_id,
         )
+        draft = await fill_escalation_draft(
+            session,
+            conversation_id=response.conversation_id,
+            query=_text(event),
+        )
+        await try_send_operator_note(session, client, dialog_id=dialog_id, text=draft)
         return BitrixBotResponse(
             conversation_id=response.conversation_id,
             status="processed",
@@ -250,46 +287,19 @@ async def _process_operator(
     )
 
 
-def _maybe_build_client() -> Bitrix24RestClient | None:
-    if not (
-        settings.bitrix_portal_url
-        and settings.bitrix_app_user_id
-        and settings.bitrix_app_token
-    ):
-        return None
-    return build_rest_client()
-
-
-async def _fetch_image(
-    event: BitrixBotEvent,
-    client: Bitrix24RestClient | None,
-) -> str | None:
-    url = _first_image_url(event)
-    if url is None or client is None:
-        return None
-    try:
-        return await client.download_image(url)
-    except (Bitrix24RestError, OSError) as exc:
-        logger.warning("вложение бота не скачано: %s", exc)
-        return None
-
-
-def _first_image_url(event: BitrixBotEvent) -> str | None:
+def _image_ref(event: BitrixBotEvent) -> tuple[str | None, str | None]:
     params = event.data.PARAMS if event.data else None
     if params is None:
-        return None
-    for item in params.FILES:
-        url = item.get("url")
-        if isinstance(url, str) and url:
-            return url
-    return None
+        return None, None
+    return first_image_ref(params.FILES)
 
 
 def _is_welcome(event: BitrixBotEvent) -> bool:
     name = (event.event or _MESSAGE_EVENT).upper()
     if name not in ("", _MESSAGE_EVENT):
         return True
-    if _text(event) or _first_image_url(event):
+    url, file_id = _image_ref(event)
+    if _text(event) or url or file_id:
         return False
     return True
 

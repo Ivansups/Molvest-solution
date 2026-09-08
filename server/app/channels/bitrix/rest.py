@@ -19,6 +19,15 @@ logger = logging.getLogger(__name__)
 _REST_TIMEOUT = 30.0
 
 
+def _http_fail_label(exc: httpx.HTTPError) -> str:
+    """Код/тип ошибки без URL — в URL OAuth и file token."""
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None)
+    if isinstance(status, int):
+        return f"HTTP {status}"
+    return type(exc).__name__
+
+
 class Bitrix24RestError(Exception):
     """Ошибка вызова REST Bitrix24 (аппликационный ответ об ошибке)."""
 
@@ -30,6 +39,17 @@ def build_rest_client() -> "Bitrix24RestClient":
         app_user_id=settings.bitrix_app_user_id,
         app_token=settings.bitrix_app_token,
     )
+
+
+def maybe_build_rest_client() -> "Bitrix24RestClient | None":
+    """Клиент при полной конфигурации портала, иначе None."""
+    if not (
+        settings.bitrix_portal_url
+        and settings.bitrix_app_user_id
+        and settings.bitrix_app_token
+    ):
+        return None
+    return build_rest_client()
 
 
 class Bitrix24RestClient:
@@ -116,6 +136,46 @@ class Bitrix24RestClient:
             access_token=access_token,
         )
 
+    async def send_operator_note(
+        self,
+        *,
+        dialog_id: str,
+        text: str,
+        access_token: str,
+    ) -> dict[str, object]:
+        """Черновик оператору: личное уведомление, не реплика гостю.
+
+        Метод `im.notify` на пользователя приложения (`BITRIX_APP_USER_ID`).
+        Клиент онлайн-чата это не видит. Спайк на живом портале — design.md D2.
+        """
+        to = settings.bitrix_app_user_id
+        message = f"Черновик (диалог {dialog_id}):\n{text}"
+        return await self._call_oauth(
+            "im.notify",
+            {"to": to, "message": message, "type": "SYSTEM"},
+            access_token=access_token,
+        )
+
+    async def download_file_by_id(
+        self,
+        *,
+        file_id: str,
+        access_token: str,
+    ) -> str:
+        """Скачивает файл диска по id (OAuth) и кодирует в base64."""
+        data = await self._call_oauth(
+            "disk.file.get",
+            {"id": file_id},
+            access_token=access_token,
+        )
+        result = data.get("result")
+        if not isinstance(result, dict):
+            raise Bitrix24RestError("disk.file.get: нет объекта result")
+        url = result.get("DOWNLOAD_URL") or result.get("downloadUrl")
+        if not isinstance(url, str) or not url:
+            raise Bitrix24RestError("disk.file.get: нет DOWNLOAD_URL")
+        return await self.download_image(url)
+
     async def download_image(self, url: str) -> str:
         """Скачивает картинку по прямой ссылке и кодирует в base64.
 
@@ -125,9 +185,18 @@ class Bitrix24RestClient:
         """
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https") or parsed.netloc != self._domain:
-            raise Bitrix24RestError(f"вложение с недопустимого хоста: {url}")
-        response = await self._client.get(url, follow_redirects=False)
-        response.raise_for_status()
+            raise Bitrix24RestError(f"вложение с недопустимого хоста: {parsed.netloc}")
+        try:
+            response = await self._client.get(url, follow_redirects=False)
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            label = _http_fail_label(exc)
+            logger.warning(
+                "bitrix rest download сбой host=%s %s",
+                parsed.netloc,
+                label,
+            )
+            raise Bitrix24RestError(f"скачивание вложения: {label}") from exc
         return base64.b64encode(response.content).decode("ascii")
 
     async def _call(
@@ -158,10 +227,11 @@ class Bitrix24RestClient:
         logger.info("bitrix rest %s отправка", method)
         try:
             response = await self._client.post(url, json=payload)
+            response.raise_for_status()
         except httpx.HTTPError as exc:
-            logger.warning("bitrix rest %s сетевой сбой: %s", method, exc)
-            raise Bitrix24RestError(f"{method}: {exc}") from exc
-        response.raise_for_status()
+            label = _http_fail_label(exc)
+            logger.warning("bitrix rest %s сбой %s", method, label)
+            raise Bitrix24RestError(f"{method}: {label}") from exc
         data = response.json()
         if not isinstance(data, dict):
             logger.warning("bitrix rest %s ответ не объект", method)

@@ -17,7 +17,7 @@ import app.services.ol_bot as ol_bot_service
 import app.services.openlines as openlines_service
 from app.agent.graph import build_graph
 from app.agent.state import RetrievedChunk
-from app.channels.bitrix.rest import Bitrix24RestClient
+from app.channels.bitrix.rest import Bitrix24RestClient, Bitrix24RestError
 from app.channels.bitrix.schemas import (
     BitrixBotEvent,
     BitrixOpenLinesEvent,
@@ -46,7 +46,9 @@ class _FakeBitrixClient:
     def __init__(self) -> None:
         self.send_bot_message = AsyncMock(return_value={"result": True})
         self.send_message = AsyncMock(return_value={"result": True})
+        self.send_operator_note = AsyncMock(return_value={"result": True})
         self.download_image = AsyncMock(return_value="aW1hZ2U=")
+        self.download_file_by_id = AsyncMock(return_value="aW1hZ2U=")
         self.list_bots = AsyncMock(return_value={"result": {}})
         self.register_openlines_bot = AsyncMock(return_value={"result": 55})
         self.aclose = AsyncMock(return_value=None)
@@ -73,14 +75,24 @@ def _bitrix_env(monkeypatch: MonkeyPatch) -> None:
 @pytest.fixture
 def fake_bitrix(monkeypatch: MonkeyPatch) -> _FakeBitrixClient:
     client = _FakeBitrixClient()
-    monkeypatch.setattr(ol_bot_service, "build_rest_client", lambda: client)
-    monkeypatch.setattr(
-        ol_bot_service,
-        "get_current_access_token",
-        AsyncMock(return_value="oauth-access-token"),
-    )
+    token = AsyncMock(return_value="oauth-access-token")
+    monkeypatch.setattr(ol_bot_service, "maybe_build_rest_client", lambda: client)
+    monkeypatch.setattr(openlines_service, "maybe_build_rest_client", lambda: client)
+    monkeypatch.setattr(ol_bot_service, "get_current_access_token", token)
     monkeypatch.setattr(register_bot, "build_rest_client", lambda: client)
+    monkeypatch.setattr("app.channels.bitrix.notify.get_current_access_token", token)
+    monkeypatch.setattr(
+        "app.channels.bitrix.attachments.get_current_access_token", token
+    )
     return client
+
+
+@pytest.fixture(autouse=True)
+def _mock_channel_draft(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "app.services.channel_handoff.generate_draft",
+        AsyncMock(return_value="Черновик оператору"),
+    )
 
 
 @pytest.fixture
@@ -121,6 +133,7 @@ def _payload(
     secret: str = SECRET,
     event: str = "ONIMBOTMESSAGEADD",
     with_dialog: bool = True,
+    files: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     params: dict[str, object] = {
         "MESSAGE": text,
@@ -131,6 +144,8 @@ def _payload(
         params["DIALOG_ID"] = dialog_id
     if author_type is not None:
         params["AUTHOR_TYPE"] = author_type
+    if files:
+        params["FILES"] = files
     return {
         "event": event,
         "data": {"PARAMS": params, "BOT": {"BOT_ID": BOT_ID}},
@@ -554,6 +569,8 @@ async def test_escalation_does_not_send_bot_message(
     )
     assert conversation is not None
     assert conversation.status == ConversationStatus.ESCALATED
+    assert conversation.suggested_response == "Черновик оператору"
+    fake_bitrix.send_operator_note.assert_awaited()
 
 
 async def test_operator_event_persists_without_graph(
@@ -623,7 +640,6 @@ async def test_bot_and_connector_same_id_are_separate_conversations(
         operator_assist_mode="auto",
     )
     _patch_auto_graph(monkeypatch, llm_mock, app_settings)
-    monkeypatch.setattr(openlines_service, "build_rest_client", lambda: fake_bitrix)
     monkeypatch.setattr(
         openlines_service,
         "get_current_access_token",
@@ -680,7 +696,6 @@ async def test_connector_webhook_still_works_after_bot(
         operator_assist_mode="auto",
     )
     _patch_auto_graph(monkeypatch, llm_mock, app_settings)
-    monkeypatch.setattr(openlines_service, "build_rest_client", lambda: fake_bitrix)
     monkeypatch.setattr(
         openlines_service,
         "get_current_access_token",
@@ -740,3 +755,209 @@ async def test_secrets_not_in_bot_response_or_logs(
         assert SECRET not in record.message
         assert "out-token" not in record.message
         assert "oauth-access-token" not in record.message
+
+
+async def test_draft_followup_after_escalation_does_not_reply(
+    api_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: MonkeyPatch,
+    llm_mock: object,
+    app_settings: Settings,
+    cache_mocks: object,
+    fake_bitrix: _FakeBitrixClient,
+) -> None:
+    await _seed_bot(db_session)
+    runtime_settings.update_effective_settings(
+        confidence_threshold=0.8,
+        operator_assist_mode="draft",
+    )
+    _patch_auto_graph(monkeypatch, llm_mock, app_settings, weak=True)
+    first = await api_client.post(PATH, json=_payload(message_id="esc-1"))
+    assert first.json()["escalated"] is True
+    fake_bitrix.send_bot_message.assert_not_awaited()
+
+    second = await api_client.post(
+        PATH, json=_payload(message_id="esc-2", text="ещё вопрос")
+    )
+    assert second.status_code == 200
+    assert second.json()["conversation_id"] == first.json()["conversation_id"]
+    fake_bitrix.send_bot_message.assert_not_awaited()
+    conversation = await db_session.get(
+        Conversation, UUID(second.json()["conversation_id"])
+    )
+    assert conversation is not None
+    assert conversation.suggested_response == "Черновик оператору"
+    fake_bitrix.send_operator_note.assert_awaited()
+
+
+async def test_draft_followup_after_operator_message(
+    api_client: AsyncClient,
+    db_session: AsyncSession,
+    fake_bitrix: _FakeBitrixClient,
+) -> None:
+    await api_client.post(
+        PATH,
+        json=_payload(author_type="operator", message_id="op-first", text="Жду"),
+    )
+    fake_bitrix.send_bot_message.assert_not_awaited()
+    follow = await api_client.post(
+        PATH, json=_payload(message_id="guest-after-op", text="как провести?")
+    )
+    assert follow.status_code == 200
+    fake_bitrix.send_bot_message.assert_not_awaited()
+    conversation = await db_session.get(
+        Conversation, UUID(follow.json()["conversation_id"])
+    )
+    assert conversation is not None
+    assert conversation.suggested_response == "Черновик оператору"
+
+
+async def test_auto_followup_after_escalation_sends_reply(
+    api_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: MonkeyPatch,
+    llm_mock: object,
+    app_settings: Settings,
+    cache_mocks: object,
+    fake_bitrix: _FakeBitrixClient,
+) -> None:
+    await _seed_bot(db_session)
+    runtime_settings.update_effective_settings(
+        confidence_threshold=0.8,
+        operator_assist_mode="draft",
+    )
+    _patch_auto_graph(monkeypatch, llm_mock, app_settings, weak=True)
+    first = await api_client.post(PATH, json=_payload(message_id="mode-1"))
+    assert first.json()["escalated"] is True
+    runtime_settings.update_effective_settings(
+        confidence_threshold=0.8,
+        operator_assist_mode="auto",
+    )
+    _patch_auto_graph(monkeypatch, llm_mock, app_settings, weak=False)
+    second = await api_client.post(
+        PATH, json=_payload(message_id="mode-2", text="как провести документ?")
+    )
+    assert second.status_code == 200
+    assert second.json()["escalated"] is False
+    fake_bitrix.send_bot_message.assert_awaited()
+
+
+async def test_bot_file_id_downloads_attachment(
+    api_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: MonkeyPatch,
+    llm_mock: object,
+    app_settings: Settings,
+    cache_mocks: object,
+    fake_bitrix: _FakeBitrixClient,
+) -> None:
+    await _seed_bot(db_session)
+    runtime_settings.update_effective_settings(
+        confidence_threshold=0.8,
+        operator_assist_mode="auto",
+    )
+    _patch_auto_graph(monkeypatch, llm_mock, app_settings)
+    response = await api_client.post(
+        PATH,
+        json=_payload(
+            text="",
+            message_id="img-1",
+            files=[{"id": "disk-77"}],
+        ),
+    )
+    assert response.status_code == 200
+    fake_bitrix.download_file_by_id.assert_awaited()
+    fake_bitrix.send_bot_message.assert_awaited()
+
+
+async def test_bot_image_download_failure_still_processes(
+    api_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: MonkeyPatch,
+    llm_mock: object,
+    app_settings: Settings,
+    cache_mocks: object,
+    fake_bitrix: _FakeBitrixClient,
+) -> None:
+    await _seed_bot(db_session)
+    fake_bitrix.download_file_by_id = AsyncMock(side_effect=OSError("disk down"))
+    runtime_settings.update_effective_settings(
+        confidence_threshold=0.8,
+        operator_assist_mode="auto",
+    )
+    _patch_auto_graph(monkeypatch, llm_mock, app_settings)
+    response = await api_client.post(
+        PATH,
+        json=_payload(
+            text="как провести документ?",
+            message_id="img-fail",
+            files=[{"id": "disk-1"}],
+        ),
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "processed"
+
+
+async def test_bot_cdn_url_falls_back_to_file_id(
+    api_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: MonkeyPatch,
+    llm_mock: object,
+    app_settings: Settings,
+    cache_mocks: object,
+    fake_bitrix: _FakeBitrixClient,
+) -> None:
+    await _seed_bot(db_session)
+    fake_bitrix.download_image = AsyncMock(
+        side_effect=Bitrix24RestError("вложение с недопустимого хоста: cdn.example")
+    )
+    runtime_settings.update_effective_settings(
+        confidence_threshold=0.8,
+        operator_assist_mode="auto",
+    )
+    _patch_auto_graph(monkeypatch, llm_mock, app_settings)
+    response = await api_client.post(
+        PATH,
+        json=_payload(
+            text="скрин",
+            message_id="img-cdn",
+            files=[{"url": "https://cdn.example/p.png", "id": "disk-77"}],
+        ),
+    )
+    assert response.status_code == 200
+    fake_bitrix.download_file_by_id.assert_awaited()
+
+
+async def test_bot_image_http_error_still_processes(
+    api_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: MonkeyPatch,
+    llm_mock: object,
+    app_settings: Settings,
+    cache_mocks: object,
+    fake_bitrix: _FakeBitrixClient,
+) -> None:
+    await _seed_bot(db_session)
+    request = httpx.Request("GET", "https://portal.bitrix24.ru/x")
+    fake_bitrix.download_image = AsyncMock(
+        side_effect=httpx.HTTPStatusError(
+            "404",
+            request=request,
+            response=httpx.Response(404, request=request),
+        )
+    )
+    runtime_settings.update_effective_settings(
+        confidence_threshold=0.8,
+        operator_assist_mode="auto",
+    )
+    _patch_auto_graph(monkeypatch, llm_mock, app_settings)
+    response = await api_client.post(
+        PATH,
+        json=_payload(
+            text="как провести документ?",
+            message_id="img-http",
+            files=[{"url": "https://portal.bitrix24.ru/x"}],
+        ),
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "processed"

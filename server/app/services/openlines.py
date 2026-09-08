@@ -12,11 +12,16 @@ from uuid import UUID, uuid5
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.channels.bitrix.attachments import (
+    fetch_attachment_base64,
+    first_image_ref,
+)
+from app.channels.bitrix.notify import try_send_operator_note
 from app.channels.bitrix.oauth import get_current_access_token
 from app.channels.bitrix.rest import (
     Bitrix24RestClient,
     Bitrix24RestError,
-    build_rest_client,
+    maybe_build_rest_client,
 )
 from app.channels.bitrix.schemas import (
     BitrixOpenLinesEvent,
@@ -30,11 +35,15 @@ from app.models.message import Message
 from app.rag.retrieval import workspace_to_installation_id
 from app.schemas.chat import ChatRequest
 from app.services.agent import ConversationConflictError, run_chat_turn
+from app.services.channel_handoff import (
+    fill_escalation_draft,
+    persist_draft_followup,
+    should_draft_followup,
+)
 
 logger = logging.getLogger(__name__)
 
 _CHANNEL = "bitrix_openlines"
-# Детерминированный message_id для ChatRequest из строкового id события.
 _CHAT_MSG_NS = UUID("41f7c1f7-0000-4f6e-9c6e-0000000000a2")
 _DEFAULT_USER = "bitrix"
 _OPERATOR_MARKER = "operator"
@@ -77,9 +86,6 @@ async def process_openlines_event(
     )
 
 
-# ── Гость ────────────────────────────────────────────────────────────────
-
-
 async def _process_guest(
     session: AsyncSession,
     *,
@@ -89,7 +95,7 @@ async def _process_guest(
     message_id: str,
 ) -> BitrixOpenLinesResponse:
     """Полный граф: ответ гостю при высоком confidence, иначе эскалация."""
-    client = _maybe_build_client()
+    client = maybe_build_rest_client()
     try:
         return await _run_guest(
             session,
@@ -118,20 +124,40 @@ async def _run_guest(
         installation_id=installation_id,
         chat_id=chat_id,
     )
+    conversation: Conversation | None = None
     if mapping is not None:
         conversation = await session.get(Conversation, mapping.conversation_id)
         if conversation is None or conversation.status == ConversationStatus.RESOLVED:
             raise ConversationConflictError("Диалог уже закрыт")
-        conversation_id: UUID | None = conversation.id
-    else:
-        conversation_id = None
+        if await should_draft_followup(session, conversation):
+            url, file_id = _image_ref(event)
+            image = await fetch_attachment_base64(
+                client=client, session=session, url=url, file_id=file_id
+            )
+            draft = await persist_draft_followup(
+                session,
+                conversation=conversation,
+                user_text=_text(event),
+                user_image=image,
+                channel=_CHANNEL,
+                channel_message_id=message_id,
+            )
+            await try_send_operator_note(session, client, dialog_id=chat_id, text=draft)
+            return BitrixOpenLinesResponse(
+                conversation_id=conversation.id,
+                status="processed",
+                escalated=conversation.status == ConversationStatus.ESCALATED,
+            )
 
+    url, file_id = _image_ref(event)
     request = ChatRequest(
         message_id=uuid5(_CHAT_MSG_NS, message_id),
         workspace_id=_domain(event),
-        conversation_id=conversation_id,
+        conversation_id=None if conversation is None else conversation.id,
         text=_text(event),
-        image_base64=await _fetch_image(event, client),
+        image_base64=await fetch_attachment_base64(
+            client=client, session=session, url=url, file_id=file_id
+        ),
         user_id=_author_id(event),
     )
     response = await run_chat_turn(
@@ -158,6 +184,12 @@ async def _run_guest(
             response.conversation_id,
             message_id,
         )
+        draft = await fill_escalation_draft(
+            session,
+            conversation_id=response.conversation_id,
+            query=_text(event),
+        )
+        await try_send_operator_note(session, client, dialog_id=chat_id, text=draft)
         return BitrixOpenLinesResponse(
             conversation_id=response.conversation_id,
             status="processed",
@@ -215,9 +247,6 @@ async def _send_reply(
         return False
 
 
-# ── Оператор ─────────────────────────────────────────────────────────────
-
-
 async def _process_operator(
     session: AsyncSession,
     *,
@@ -254,49 +283,14 @@ async def _process_operator(
     )
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────
-
-
-def _maybe_build_client() -> Bitrix24RestClient | None:
-    """Клиент только при полной конфигурации портала; иначе None."""
-    if not (
-        settings.bitrix_portal_url
-        and settings.bitrix_app_user_id
-        and settings.bitrix_app_token
-    ):
-        return None
-    return build_rest_client()
-
-
-async def _fetch_image(
-    event: BitrixOpenLinesEvent,
-    client: Bitrix24RestClient | None,
-) -> str | None:
-    """Best-effort: первая картинка события; недоступная — None без сбоя."""
-    url = _first_image_url(event)
-    if url is None or client is None:
-        return None
-    try:
-        return await client.download_image(url)
-    except (Bitrix24RestError, OSError) as exc:
-        logger.warning("вложение из события не скачано: %s", exc)
-        return None
-
-
-def _first_image_url(event: BitrixOpenLinesEvent) -> str | None:
-    """Первый URL картинки из data.message.img/files."""
+def _image_ref(event: BitrixOpenLinesEvent) -> tuple[str | None, str | None]:
     message = event.data.message if event.data else None
     if message is None:
-        return None
-    for item in message.img:
-        url = item.get("url")
-        if isinstance(url, str) and url:
-            return url
-    for item in message.files:
-        url = item.get("url")
-        if isinstance(url, str) and url:
-            return url
-    return None
+        return None, None
+    url, file_id = first_image_ref(message.img)
+    if url or file_id:
+        return url, file_id
+    return first_image_ref(message.files)
 
 
 def _is_operator(event: BitrixOpenLinesEvent) -> bool:
@@ -304,15 +298,9 @@ def _is_operator(event: BitrixOpenLinesEvent) -> bool:
     message = event.data.message if event.data else None
     if message is None:
         return False
-    author_type = _author_type(event)
-    return author_type is not None and author_type.lower() == _OPERATOR_MARKER
-
-
-def _author_type(event: BitrixOpenLinesEvent) -> str | None:
-    message = event.data.message if event.data else None
-    author = getattr(message, "author", None) if message else None
+    author = getattr(message, "author", None)
     value = author.type if author is not None else None
-    return None if value is None else str(value)
+    return value is not None and str(value).lower() == _OPERATOR_MARKER
 
 
 def _author_id(event: BitrixOpenLinesEvent) -> str:
