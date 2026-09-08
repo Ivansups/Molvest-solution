@@ -32,11 +32,11 @@ async def test_install_stores_token_pair(
     response = await api_client.post(
         INSTALL_PATH,
         data={
-            "DOMAIN": "portal.bitrix24.ru",
-            "AUTH_ID": "access-1",
-            "REFRESH_ID": "refresh-1",
-            "AUTH_EXPIRES": "3600",
-            "member_id": "member-1",
+            "event": "ONAPPINSTALL",
+            "auth[access_token]": "access-1",
+            "auth[refresh_token]": "refresh-1",
+            "auth[expires_in]": "3600",
+            "auth[member_id]": "member-1",
         },
     )
     assert response.status_code == 200
@@ -53,7 +53,9 @@ async def test_install_stores_token_pair(
 
 
 async def test_install_missing_fields_is_422(api_client: AsyncClient) -> None:
-    response = await api_client.post(INSTALL_PATH, data={"DOMAIN": "portal"})
+    response = await api_client.post(
+        INSTALL_PATH, data={"event": "ONAPPINSTALL", "auth[domain]": "portal"}
+    )
     assert response.status_code == 422
 
 
@@ -61,10 +63,10 @@ async def test_install_response_has_no_secrets(api_client: AsyncClient) -> None:
     response = await api_client.post(
         INSTALL_PATH,
         data={
-            "AUTH_ID": "super-secret-access",
-            "REFRESH_ID": "super-secret-refresh",
-            "AUTH_EXPIRES": "3600",
-            "member_id": "member-2",
+            "auth[access_token]": "super-secret-access",
+            "auth[refresh_token]": "super-secret-refresh",
+            "auth[expires_in]": "3600",
+            "auth[member_id]": "member-2",
         },
     )
     assert "super-secret-access" not in response.text

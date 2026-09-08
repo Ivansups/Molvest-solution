@@ -20,7 +20,9 @@ from app.models.time import utc_now
 
 logger = logging.getLogger(__name__)
 
-_TOKEN_URL = "https://oauth.bitrix.info/oauth/token/"
+# Подтверждено живым порталом (ONAPPINSTALL auth[server_endpoint]) — новый
+# унифицированный REST/OAuth-хост Bitrix24, не устаревший oauth.bitrix.info.
+_TOKEN_URL = "https://oauth.bitrix24.tech/oauth/token/"
 _REST_TIMEOUT = 30.0
 
 

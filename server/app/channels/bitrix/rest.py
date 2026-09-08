@@ -74,6 +74,48 @@ class Bitrix24RestClient:
             access_token=access_token,
         )
 
+    async def send_bot_message(
+        self,
+        *,
+        bot_id: str,
+        dialog_id: str,
+        text: str,
+        access_token: str,
+    ) -> dict[str, object]:
+        """Отправляет ответ бота в диалог клиента (`imbot.message.add`)."""
+        return await self._call_oauth(
+            "imbot.message.add",
+            {"BOT_ID": bot_id, "DIALOG_ID": dialog_id, "MESSAGE": text},
+            access_token=access_token,
+        )
+
+    async def list_bots(self, access_token: str) -> dict[str, object]:
+        """Список ботов приложения (`imbot.bot.list`)."""
+        return await self._call_oauth("imbot.bot.list", {}, access_token=access_token)
+
+    async def register_openlines_bot(
+        self,
+        *,
+        code: str,
+        handler_url: str,
+        name: str,
+        access_token: str,
+    ) -> dict[str, object]:
+        """Регистрирует бота открытой линии (`imbot.register`)."""
+        return await self._call_oauth(
+            "imbot.register",
+            {
+                "CODE": code,
+                "TYPE": "O",
+                "OPENLINE": "Y",
+                "EVENT_MESSAGE_ADD": handler_url,
+                "EVENT_WELCOME_MESSAGE": handler_url,
+                "EVENT_BOT_DELETE": handler_url,
+                "PROPERTIES": {"NAME": name},
+            },
+            access_token=access_token,
+        )
+
     async def download_image(self, url: str) -> str:
         """Скачивает картинку по прямой ссылке и кодирует в base64.
 
