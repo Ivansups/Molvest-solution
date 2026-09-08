@@ -57,9 +57,14 @@ def _bitrix_env(monkeypatch: MonkeyPatch) -> None:
 
 @pytest.fixture
 def fake_bitrix(monkeypatch: MonkeyPatch) -> _FakeBitrixClient:
-    """Подменяет фабрику REST-клиента, чтобы не ходить в сеть."""
+    """Подменяет фабрику REST-клиента и OAuth-токен, чтобы не ходить в сеть."""
     client = _FakeBitrixClient()
     monkeypatch.setattr(openlines_service, "build_rest_client", lambda: client)
+    monkeypatch.setattr(
+        openlines_service,
+        "get_current_access_token",
+        AsyncMock(return_value="oauth-access-token"),
+    )
     return client
 
 
