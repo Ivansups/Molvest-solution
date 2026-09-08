@@ -1,9 +1,7 @@
 ## Purpose
 
 Connects the Next.js frontend to FastAPI through a stable proxy path and keeps unavailable backend endpoints visible instead of masked by mock data.
-
 ## Requirements
-
 ### Requirement: Frontend proxies connected backend APIs through a stable local path
 
 The system SHALL proxy connected browser requests through `/backend/:path*` to
@@ -53,3 +51,11 @@ provide a production build path compatible with the installed Next.js version.
 
 - **WHEN** an operator runs `pnpm --dir frontend build`
 - **THEN** the build completes without requiring external Google Fonts access
+
+### Requirement: Local Docker development hydrates through loopback
+The Next.js development server SHALL allow `127.0.0.1` to request its client
+resources when the frontend runs in Docker locally.
+
+#### Scenario: Guest opens local frontend through loopback
+- **WHEN** a browser opens the Docker frontend at `http://127.0.0.1:3000`
+- **THEN** Next.js loads client resources without blocking cross-origin dev requests and interactive controls work

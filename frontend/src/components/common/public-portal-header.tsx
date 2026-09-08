@@ -27,7 +27,7 @@ export function PublicPortalHeader({
     >
       <BrandMark compact />
       <div className="flex flex-wrap items-center gap-3">
-        <div className="shell-panel soft-shadow inline-flex items-center gap-1 rounded-full border border-white/70 p-1">
+        <div className="ui-surface shell-panel soft-shadow inline-flex items-center gap-1 rounded-full border border-white/70 p-1">
           <Link
             href="/chat"
             className={cn(

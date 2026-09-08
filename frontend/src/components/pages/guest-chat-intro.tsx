@@ -17,7 +17,7 @@ function MiniStat({ label, value }: { label: string; value: string }) {
 export function GuestChatIntro() {
   return (
     <section className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-      <div className="hero-panel soft-shadow overflow-hidden rounded-[30px] p-8 text-white lg:p-10">
+      <div className="hero-panel soft-shadow reveal-item reveal-delay-1 overflow-hidden rounded-[30px] p-8 text-white lg:p-10">
         <div className="max-w-2xl">
           <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">
             Гостевой доступ
@@ -50,7 +50,7 @@ export function GuestChatIntro() {
         </div>
       </div>
       <div className="grid gap-4">
-        <Card className="shell-panel rounded-[30px]">
+        <Card className="shell-panel reveal-item reveal-delay-2 rounded-[30px]">
           <CardContent className="grid gap-4 p-6">
             <div>
               <p className="text-[11px] uppercase tracking-[0.22em] text-primary">
@@ -86,7 +86,7 @@ export function GuestChatIntro() {
             </div>
           </CardContent>
         </Card>
-        <Card className="shell-panel rounded-[30px]">
+        <Card className="shell-panel reveal-item reveal-delay-3 rounded-[30px]">
           <CardContent className="p-6">
             <p className="text-[11px] uppercase tracking-[0.22em] text-primary">
               Что поможет ответу

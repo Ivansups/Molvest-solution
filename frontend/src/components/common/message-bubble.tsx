@@ -1,7 +1,11 @@
+"use client";
+
 import Image from "next/image";
-import { Bot, UserCircle2, Wrench } from "lucide-react";
+import { useState } from "react";
+import { Bot, FileText, UserCircle2, Wrench } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/src/components/ui/avatar";
 import { Badge } from "@/src/components/ui/badge";
+import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 import { cn } from "@/src/lib/utils";
 import type { ConversationMessage } from "@/src/types/domain";
@@ -13,7 +17,13 @@ const roleMeta = {
   system: { label: "Система", icon: Bot, tone: "bg-amber-50/90" },
 } as const;
 
-export function MessageBubble({ message }: { message: ConversationMessage }) {
+export function MessageBubble({
+  message,
+  animate = false,
+}: {
+  message: ConversationMessage;
+  animate?: boolean;
+}) {
   const meta = roleMeta[message.role];
   const Icon = meta.icon;
 
@@ -21,6 +31,7 @@ export function MessageBubble({ message }: { message: ConversationMessage }) {
     <div
       className={cn(
         "soft-shadow flex gap-3 rounded-[24px] border border-white/70 p-4",
+        animate && "reveal-item",
         meta.tone,
       )}
     >
@@ -78,18 +89,43 @@ export function MessageBubble({ message }: { message: ConversationMessage }) {
           </Card>
         ) : null}
         {message.sources?.length ? (
-          <div className="flex flex-wrap gap-2">
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-slate-500">Источники</p>
             {message.sources.map((source, index) => (
-              <Badge
-                key={`${source.document_id}-${index}`}
-                className="bg-white"
-              >
-                {source.title}
-              </Badge>
+              <SourceCitation key={`${source.document_id}-${index}`} source={source} />
             ))}
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function SourceCitation({
+  source,
+}: {
+  source: NonNullable<ConversationMessage["sources"]>[number];
+}) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  return (
+    <div className="rounded-xl border border-primary/15 bg-white/80 p-2">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-auto w-full justify-start whitespace-normal px-2 py-1.5 text-left text-primary"
+        aria-expanded={isExpanded}
+        onClick={() => setIsExpanded((current) => !current)}
+      >
+        <FileText className="h-4 w-4 shrink-0" />
+        <span>{source.title}</span>
+      </Button>
+      {isExpanded ? (
+        <p className="px-2 pb-1 pt-2 text-sm leading-6 text-slate-600">
+          {source.chunk_text}
+        </p>
+      ) : null}
     </div>
   );
 }

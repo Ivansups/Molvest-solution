@@ -3,7 +3,7 @@ import { cn } from "@/src/lib/utils";
 
 const Table = React.forwardRef<HTMLTableElement, React.ComponentProps<"table">>(
   ({ className, ...props }, ref) => (
-    <div className="w-full overflow-auto">
+    <div className="ui-table w-full overflow-auto">
       <table ref={ref} className={cn("w-full caption-bottom text-sm", className)} {...props} />
     </div>
   ),
@@ -62,4 +62,3 @@ const TableCell = React.forwardRef<HTMLTableCellElement, React.ComponentProps<"t
 TableCell.displayName = "TableCell";
 
 export { Table, TableBody, TableCell, TableHead, TableHeader, TableRow };
-

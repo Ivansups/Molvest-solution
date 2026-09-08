@@ -39,7 +39,7 @@ export function AppSidebar({ role }: { role: AppRole }) {
   const pathname = usePathname();
 
   return (
-    <aside className="accent-grid flex h-full w-72 flex-col border-r border-white/10 bg-[#10284d] px-5 py-6 text-white">
+    <aside className="ui-surface accent-grid flex h-full w-72 flex-col border-r border-white/10 bg-[#10284d] px-5 py-6 text-white">
       <BrandMark />
       <div className="mt-8 rounded-2xl border border-white/10 bg-white/5 p-3">
         <p className="text-[11px] uppercase tracking-[0.22em] text-white/55">
