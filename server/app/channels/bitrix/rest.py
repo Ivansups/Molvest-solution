@@ -8,6 +8,7 @@ URL в лог никогда не пишется: логируем только 
 import base64
 import logging
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -32,7 +33,9 @@ def build_rest_client() -> "Bitrix24RestClient":
 
 
 class Bitrix24RestClient:
-    """Единый клиент REST-вебхука Bitrix24 (`/rest/{user}/{token}/`).
+    """Клиент REST Bitrix24: вебхук (`/rest/{user}/{token}/`) для методов без
+    контекста приложения, OAuth (`?auth=`) для `imconnector.*`/`imbot.*` —
+    те требуют установленное приложение (см. design.md, D8).
 
     Не является потокобезопасным, рассчитан на один вызов за время жизни.
     """
@@ -44,6 +47,7 @@ class Bitrix24RestClient:
         app_user_id: str,
         app_token: str,
     ) -> None:
+        self._domain = urlparse(portal_url).netloc
         self._base_url = f"{portal_url.rstrip('/')}/rest/{app_user_id}/{app_token}/"
         self._client = httpx.AsyncClient(timeout=_REST_TIMEOUT)
 
@@ -57,20 +61,30 @@ class Bitrix24RestClient:
         connector_id: str,
         chat_id: str,
         text: str,
+        access_token: str,
     ) -> dict[str, object]:
-        """Отправляет сообщение пользователя приложения в диалог открытой линии."""
-        return await self._call(
+        """Отправляет ответ агента в диалог открытой линии через OAuth."""
+        return await self._call_oauth(
             "imconnector.send.messages",
             {
-                "connector_id": connector_id,
-                "chat_id": chat_id,
-                "messages": [{"message": text}],
+                "CONNECTOR": connector_id,
+                "LINE": settings.bitrix_line_id,
+                "MESSAGES": [{"user": {"id": chat_id}, "message": {"text": text}}],
             },
+            access_token=access_token,
         )
 
     async def download_image(self, url: str) -> str:
-        """Скачивает картинку по прямой ссылке и кодирует в base64."""
-        response = await self._client.get(url)
+        """Скачивает картинку по прямой ссылке и кодирует в base64.
+
+        Хост ссылки обязан совпадать с доменом портала — событие приходит от
+        клиента и не должно позволять серверу ходить на произвольные адреса
+        (SSRF).
+        """
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or parsed.netloc != self._domain:
+            raise Bitrix24RestError(f"вложение с недопустимого хоста: {url}")
+        response = await self._client.get(url, follow_redirects=False)
         response.raise_for_status()
         return base64.b64encode(response.content).decode("ascii")
 
@@ -79,13 +93,29 @@ class Bitrix24RestClient:
         method: str,
         payload: dict[str, Any],
     ) -> dict[str, object]:
-        """POST в метод приложения. URL с ключом в лог не попадает."""
+        """POST в метод приложения по вебхуку. URL с ключом в лог не попадает."""
+        return await self._post(f"{self._base_url}{method}", method, payload)
+
+    async def _call_oauth(
+        self,
+        method: str,
+        payload: dict[str, Any],
+        *,
+        access_token: str,
+    ) -> dict[str, object]:
+        """POST в метод, требующий контекст приложения. Токен в URL, не в лог."""
+        url = f"https://{self._domain}/rest/{method}?auth={access_token}"
+        return await self._post(url, method, payload)
+
+    async def _post(
+        self,
+        url: str,
+        method: str,
+        payload: dict[str, Any],
+    ) -> dict[str, object]:
         logger.info("bitrix rest %s отправка", method)
         try:
-            response = await self._client.post(
-                f"{self._base_url}{method}",
-                json=payload,
-            )
+            response = await self._client.post(url, json=payload)
         except httpx.HTTPError as exc:
             logger.warning("bitrix rest %s сетевой сбой: %s", method, exc)
             raise Bitrix24RestError(f"{method}: {exc}") from exc

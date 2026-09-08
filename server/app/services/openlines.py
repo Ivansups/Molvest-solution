@@ -12,6 +12,7 @@ from uuid import UUID, uuid5
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.channels.bitrix.oauth import get_current_access_token
 from app.channels.bitrix.rest import (
     Bitrix24RestClient,
     Bitrix24RestError,
@@ -165,7 +166,9 @@ async def _run_guest(
 
     delivered = False
     if response.text:
-        delivered = await _send_reply(client, chat_id=chat_id, text=response.text)
+        delivered = await _send_reply(
+            session, client, chat_id=chat_id, text=response.text
+        )
     logger.info(
         "openlines обработано conversation_id=%s delivered=%s message_id=%s",
         response.conversation_id,
@@ -181,6 +184,7 @@ async def _run_guest(
 
 
 async def _send_reply(
+    session: AsyncSession,
     client: Bitrix24RestClient | None,
     *,
     chat_id: str,
@@ -194,11 +198,16 @@ async def _send_reply(
     if not connector_id:
         logger.warning("BITRIX_CONNECTOR_ID пуст: ответ в ОЛ не ушёл")
         return False
+    access_token = await get_current_access_token(session)
+    if access_token is None:
+        logger.warning("bitrix приложение не установлено: ответ в ОЛ не ушёл")
+        return False
     try:
         await client.send_message(
             connector_id=connector_id,
             chat_id=chat_id,
             text=text,
+            access_token=access_token,
         )
         return True
     except (Bitrix24RestError, OSError) as exc:
