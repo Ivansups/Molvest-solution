@@ -39,6 +39,10 @@ import type { ConversationDetail, ConversationMessage, UserSession } from "@/src
 import { useConversation } from "@/src/hooks/use-conversation";
 import { useToast } from "@/src/hooks/use-toast";
 import { formatDateTime } from "@/src/lib/format";
+import {
+  isActiveGuestSend,
+  isStaleGuestGeneration,
+} from "@/src/lib/guest-session";
 import { dataUrlToBase64, fileToCompressedDataUrl } from "@/src/lib/image";
 import { DEFAULT_INSTALLATION_ID } from "@/src/lib/installation";
 import { chatService } from "@/src/services/chat-service";
@@ -75,7 +79,11 @@ export function ChatPage({
     setConversationId: setGuestConversationId,
     resetConversation,
   } = useConversation();
-  const guestConversationVersion = useRef(0);
+  const guestSessionGeneration = useRef(0);
+  const [guestSessionEpoch, setGuestSessionEpoch] = useState(0);
+  const [pendingGuestGeneration, setPendingGuestGeneration] = useState<
+    number | null
+  >(null);
   const [guestMessages, setGuestMessages] = useState<ConversationMessage[]>([]);
   const [imageDialogOpen, setImageDialogOpen] = useState(false);
   const [page, setPage] = useState(1);
@@ -144,7 +152,6 @@ export function ChatPage({
       const userContent = draft.trim() || "Пользователь отправил изображение";
       const imageUrl = pendingImage?.previewUrl;
       const guestUserId = `guest-${guestConversationId ?? "session"}`;
-      const conversationVersion = guestConversationVersion.current;
       const data = await chatService.sendMessage({
         message_id: crypto.randomUUID(),
         workspace_id: installationId,
@@ -159,16 +166,28 @@ export function ChatPage({
         userContent,
         imageUrl,
         alreadyEscalated,
-        conversationVersion,
       };
     },
-    onSuccess: async (result) => {
+    onMutate: (): { generation: number } => {
+      const generation = guestSessionGeneration.current;
+      if (!isSupportMode) {
+        setPendingGuestGeneration(generation);
+      }
+      return { generation };
+    },
+    onSuccess: async (result, _variables, context) => {
       if (!result) {
         return;
       }
 
       if (result.kind === "guest") {
-        if (result.conversationVersion !== guestConversationVersion.current) {
+        if (
+          context === undefined ||
+          isStaleGuestGeneration(
+            context.generation,
+            guestSessionGeneration.current,
+          )
+        ) {
           return;
         }
         setDraft("");
@@ -229,7 +248,17 @@ export function ChatPage({
         queryKey: ["conversation", installationId, selectedId],
       });
     },
-    onError: (error) => {
+    onError: (error, _variables, context) => {
+      if (
+        !isSupportMode &&
+        (context === undefined ||
+          isStaleGuestGeneration(
+            context.generation,
+            guestSessionGeneration.current,
+          ))
+      ) {
+        return;
+      }
       if (error instanceof ApiServiceError && error.status === 409) {
         toast({
           title: "Диалог закрыт",
@@ -242,6 +271,15 @@ export function ChatPage({
         description: error instanceof Error ? error.message : "Повторите запрос позже.",
         variant: "destructive",
       });
+    },
+    onSettled: (_data, _error, _variables, context) => {
+      if (
+        !isSupportMode &&
+        context !== undefined &&
+        context.generation === guestSessionGeneration.current
+      ) {
+        setPendingGuestGeneration(null);
+      }
     },
   });
 
@@ -290,9 +328,15 @@ export function ChatPage({
   const guestVisibleMessages = conversationQuery.data?.messages ?? guestMessages;
   const guestEscalated = conversationQuery.data?.status === "escalated";
   const guestClosed = conversationQuery.data?.status === "resolved";
+  const guestSendPending = isActiveGuestSend(
+    pendingGuestGeneration,
+    guestSessionEpoch,
+  );
 
   const handleNewGuestConversation = (): void => {
-    guestConversationVersion.current += 1;
+    guestSessionGeneration.current += 1;
+    setGuestSessionEpoch(guestSessionGeneration.current);
+    setPendingGuestGeneration(null);
     resetConversation();
     setGuestMessages([]);
     setDraft("");
@@ -308,7 +352,7 @@ export function ChatPage({
               <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border/60 px-6 py-5">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.2em] text-primary">
-                    Новый диалог
+                    Гостевой канал
                   </p>
                   <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-secondary">
                     Гостевой чат поддержки 1С
@@ -342,10 +386,14 @@ export function ChatPage({
                       </p>
                     </div>
                   ) : null}
-                  {guestVisibleMessages.map((message) => (
-                    <MessageBubble key={message.id} message={message} />
+                  {guestVisibleMessages.map((message, index) => (
+                    <MessageBubble
+                      key={message.id}
+                      message={message}
+                      animate={index === guestVisibleMessages.length - 1}
+                    />
                   ))}
-                  {sendMutation.isPending ? (
+                  {guestSendPending ? (
                     <div className="flex items-center gap-3 rounded-2xl border border-primary/15 bg-primary/5 p-4 text-sm text-secondary">
                       <Spinner className="h-5 w-5 shrink-0" />
                       <span>
@@ -386,7 +434,7 @@ export function ChatPage({
                       return;
                     }
                     event.preventDefault();
-                    if (!sendMutation.isPending && !guestClosed) {
+                    if (!guestSendPending && !guestClosed) {
                       sendMutation.mutate();
                     }
                   }}
@@ -405,7 +453,7 @@ export function ChatPage({
                   <Button
                     type="button"
                     onClick={() => sendMutation.mutate()}
-                    disabled={sendMutation.isPending || guestClosed}
+                    disabled={guestSendPending || guestClosed}
                   >
                     <Send className="h-4 w-4" />
                     Отправить вопрос
@@ -602,8 +650,12 @@ export function ChatPage({
                     <Spinner className="h-6 w-6" />
                   </div>
                 ) : null}
-                {conversation?.messages.map((message) => (
-                  <MessageBubble key={message.id} message={message} />
+                {conversation?.messages.map((message, index) => (
+                  <MessageBubble
+                    key={message.id}
+                    message={message}
+                    animate={index === conversation.messages.length - 1}
+                  />
                 ))}
               </div>
             </ScrollArea>

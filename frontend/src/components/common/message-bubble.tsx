@@ -17,14 +17,21 @@ const roleMeta = {
   system: { label: "Система", icon: Bot, tone: "bg-amber-50/90" },
 } as const;
 
-export function MessageBubble({ message }: { message: ConversationMessage }) {
+export function MessageBubble({
+  message,
+  animate = false,
+}: {
+  message: ConversationMessage;
+  animate?: boolean;
+}) {
   const meta = roleMeta[message.role];
   const Icon = meta.icon;
 
   return (
     <div
       className={cn(
-        "soft-shadow reveal-item flex gap-3 rounded-[24px] border border-white/70 p-4",
+        "soft-shadow flex gap-3 rounded-[24px] border border-white/70 p-4",
+        animate && "reveal-item",
         meta.tone,
       )}
     >

@@ -205,7 +205,7 @@ textarea::placeholder {
 .new-dialog-button {
   animation:
     component-enter 460ms cubic-bezier(0.2, 0.8, 0.2, 1) 400ms both,
-    new-dialog-pulse 2.8s ease-in-out 1.2s infinite;
+    new-dialog-pulse 2.8s ease-in-out 1.2s 2;
 }
 
 .new-dialog-button svg {
