@@ -28,6 +28,8 @@ class BitrixOAuthToken(Base):
         DateTime(timezone=True),
         nullable=False,
     )
+    # id бота открытой линии после imbot.register; None пока не регистрировали.
+    openlines_bot_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

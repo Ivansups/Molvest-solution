@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     # openspec/changes/bitrix24-channel/design.md, D8).
     bitrix_client_id: str = ""
     bitrix_client_secret: str = ""
+    # Код бота открытой линии (imbot.register). Пустой handler URL —
+    # установку не роняем, бота не регистрируем (см. design.md D13–D14).
+    bitrix_bot_code: str = "molvest_support"
+    bitrix_handler_base_url: str = ""
 
     @field_validator("gigachat_embeddings_model")
     @classmethod
