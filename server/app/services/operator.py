@@ -5,25 +5,19 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent.nodes.generate import generate
-from app.agent.state import AgentState, HistoryTurn
-from app.core.config import settings
-from app.core.gigachat_client import get_gigachat_service
 from app.models.conversation import Conversation
 from app.models.enums import ConversationStatus, MessageRole
 from app.models.message import Message
 from app.models.time import utc_now
-from app.rag.retrieval import make_retriever
-from app.selectors.conversations import get_conversation, list_recent_messages
+from app.selectors.conversations import get_conversation
 from app.services.agent import ConversationConflictError
 from app.services.conversation_status import (
     IllegalStatusTransitionError,
     transition_status,
 )
+from app.services.draft import generate_draft
 
 logger = logging.getLogger(__name__)
-
-_HISTORY_LIMIT = 4
 
 
 class ConversationNotFoundError(Exception):
@@ -105,36 +99,16 @@ async def generate_suggestion(
     last_user = _last_user_message(conversation)
     if last_user is None:
         raise ConversationConflictError("Нет сообщения гостя для черновика")
-    query = last_user.content
-    history_rows = await list_recent_messages(
-        session, conversation.id, limit=_HISTORY_LIMIT
+    answer = await generate_draft(
+        session, conversation=conversation, query=last_user.content
     )
-    history = [
-        HistoryTurn(role=row.role.value, content=row.content) for row in history_rows
-    ]
-    await session.commit()
-
-    state: AgentState = {
-        "query": query,
-        "history": history,
-        "chunks": [],
-        "installation_id": str(installation_id),
-    }
-    llm = get_gigachat_service()
-    retriever = make_retriever(llm, settings)
-    chunks = await retriever(state)
-    state["chunks"] = chunks
-    result = await generate(state, llm=llm)
-    answer = result.get("answer")
 
     conversation = await _require_conversation(
         session, conversation_id, installation_id
     )
     if conversation.status != ConversationStatus.ESCALATED:
         raise ConversationConflictError("Черновик только для эскалированного диалога")
-    conversation.suggested_response = (
-        answer if isinstance(answer, str) and answer else None
-    )
+    conversation.suggested_response = answer
     await session.commit()
     logger.info("черновик обновлён conversation_id=%s", conversation.id)
     return conversation

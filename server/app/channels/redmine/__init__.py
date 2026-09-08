@@ -1,0 +1,1 @@
+"""Канал Redmine HelpDesk."""
