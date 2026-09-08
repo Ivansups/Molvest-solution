@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     # Код/id коннектора и линии открытой линии для исходящего imconnector.send.messages.
     bitrix_connector_id: str = ""
     bitrix_line_id: str = ""
+    # OAuth локального приложения: imconnector.*/imbot.* требуют контекст
+    # приложения, статический bitrix_app_token для них не подходит (см.
+    # openspec/changes/bitrix24-channel/design.md, D8).
+    bitrix_client_id: str = ""
+    bitrix_client_secret: str = ""
 
     @field_validator("gigachat_embeddings_model")
     @classmethod
