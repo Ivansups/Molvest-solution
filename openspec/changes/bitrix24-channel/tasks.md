@@ -28,3 +28,19 @@
 
 - [x] 6.1 `server/tests/test_bitrix_channel.py`: позитивные и негативные кейсы по спецификации — первое сообщение создаёт диалог, неверный токен → 403, маппинг «другой портал» на 6.1, дубль вызывается дважды (идемпотентность), автоответ уходит в тот же диалог после commit, эскалация ничего не шлёт, оператор не активирует отправку, секреты не в ответах и не в логах; проверить `uv run pytest server/tests/test_bitrix_channel.py`
 - [x] 6.2 Прогнать quality gate после всех правок Python-файлов: `uv run ruff check .` и `uv run ruff format --check .` и `uv run mypy .` и `uv run pytest` и `uv run alembic check` (новых миграций не ожидается — инфраструктура переиспользуется); при ошибках исправить до зелёного прогона
+
+## 7. OAuth для imconnector/imbot (см. design.md D8)
+
+Обнаружено эмпирически на живом портале: `imconnector.*` и `imbot.*`
+отклоняют статический вебхук-токен (`Application context required` /
+`insufficient_scope`) независимо от выданных scope. Без OAuth реальная
+отправка сообщений и регистрация коннектора/бота не проходят авторизацию.
+
+- [x] 7.1 `app/core/config.py`: добавить `bitrix_client_id`, `bitrix_client_secret`; `.env.example` — новые переменные без реальных значений
+- [x] 7.2 `app/models/bitrix_oauth.py`: `BitrixOAuthToken` (`member_id` unique, `access_token`, `refresh_token`, `expires_at`, `updated_at`); Alembic-миграция
+- [x] 7.3 `app/channels/bitrix/oauth.py`: `exchange_refresh_token(refresh_token) -> TokenPair` через `POST https://oauth.bitrix.info/oauth/token/` (`grant_type=refresh_token`, `client_id`, `client_secret`); секреты не логируются
+- [x] 7.4 `app/channels/bitrix/install.py`: `POST /webhook/bitrix/install` — читает `AUTH_ID`/`REFRESH_ID`/`AUTH_EXPIRES`/`member_id` из тела, upsert в `BitrixOAuthToken`, отвечает HTML с `BX24.installFinish()`; регистрация роутера в `main.py`
+- [x] 7.5 `Bitrix24RestClient`: для `imconnector.*`-вызовов — авторизация через сохранённый `access_token` (`?auth=...`), а не `BITRIX_APP_TOKEN`; заодно закрыт SSRF в `download_image` (хост ссылки должен совпадать с доменом портала, редиректы отключены)
+- [x] 7.6 Тесты (`test_bitrix_oauth.py`, 7 шт.): install-хендшейк создаёт запись токена, 422 без обязательных полей, секреты не в ответе, `get_current_access_token` отдаёт валидный и обновляет протухший, `None` без установки, ошибка refresh поднимает `BitrixOAuthError`; `test_bitrix_channel.py` обновлён под новый обязательный `access_token`
+- [ ] 7.7 Ручная проверка на тестовом портале `b24-adkm07.bitrix24.ru`: завершить установку локального приложения через `/webhook/bitrix/install`, повторить `imconnector.register`/`imconnector.activate` — уже с OAuth-токеном, убедиться, что `WRONG_AUTH_TYPE` больше не возникает
+- [x] 7.8 Quality gate: `ruff check . && ruff format --check . && mypy . && pytest && alembic check` — 126 тестов зелёных на реальном Postgres, миграция 004 накатилась чисто

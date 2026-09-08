@@ -151,7 +151,58 @@ warning, роутер не падает. Демо сценария 1 — тек�
 
 ## Open Questions
 
-- Точный JSON-формат события Open Lines REST-коннектора (имена полей
-  `auth`/`params[connector]`/`params[message]`) и точная сигнатура
-  `imconnector.send.messages` уточняются на тестовом портале — не влияет на
-  подход (либеральный парсинг, гибкая отправка) и на split задач.
+- ~~Точный JSON-формат события Open Lines REST-коннектора... уточняются на
+  тестовом портале~~ — снято, см. D8: обнаружена более серьёзная проблема на
+  уровне авторизации, формат события пока не проверен вживую (до него не
+  дошли).
+
+## D8. Реальный портал: `imconnector.*`/`imbot.*` требуют OAuth-контекст приложения (пересматривает D2)
+
+**Обнаружено эмпирически** на тестовом портале `b24-adkm07.bitrix24.ru`
+21.08.2026 (после подъёма стека и попытки живой регистрации): входящий
+вебхук с правами `im`, `imconnector`, `imopenlines`, `disk` **не проходит
+авторизацию** ни для `imconnector.register`, ни для `imconnector.send.messages`
+(`WRONG_AUTH_TYPE: Application context required`), ни для `imbot.register`
+(`insufficient_scope`) — при том что нужный scope выдан. Bitrix24 требует для
+этой группы методов контекст установленного OAuth-приложения, а не
+статический токен вебхука. Простая проверка `profile.json` тем же вебхуком
+проходит нормально — ограничение специфично для методов, создающих
+общесистемные сущности (боты, коннекторы), не для чтения/CRM.
+
+Это отменяет решение D2 («валидация токена приложения вместо OAuth») в части
+исходящих вызовов: `BITRIX_APP_USER_ID`/`BITRIX_APP_TOKEN` остаются пригодны
+для методов, не требующих app-контекста, но `Bitrix24RestClient` для
+`imconnector.send.messages` (и любая будущая регистрация бота) должен
+использовать OAuth `access_token`, полученный через установку локального
+приложения.
+
+**Новый план авторизации:**
+
+1. Локальное серверное приложение в Bitrix24 (уже создаётся вручную на
+   портале) даёт `client_id`/`client_secret` — новые `BITRIX_CLIENT_ID`,
+   `BITRIX_CLIENT_SECRET` в конфиге.
+2. `POST /webhook/bitrix/install` — путь первоначальной установки. Для
+   локального серверного приложения Bitrix присылает сюда `AUTH_ID`
+   (access token), `REFRESH_ID` (refresh token), `AUTH_EXPIRES`, `member_id`
+   прямо в теле POST — без отдельного шага обмена `code`. Хендлер сохраняет
+   токен и отвечает HTML, вызывающим `BX24.installFinish()` (иначе Bitrix
+   считает установку незавершённой).
+3. Новая таблица `bitrix_oauth_tokens` (`member_id`, `access_token`,
+   `refresh_token`, `expires_at`) — токены не годятся для статичного env:
+   `access_token` живёt ~1 час, `refresh_token` меняется при каждом обновлении.
+4. `app/channels/bitrix/oauth.py` — обмен `refresh_token` на новую пару через
+   `POST https://oauth.bitrix.info/oauth/token/` (`grant_type=refresh_token`,
+   `client_id`, `client_secret`); вызывается лениво при `expired_token` от
+   REST или проактивно по `expires_at`.
+5. `Bitrix24RestClient` для `imconnector.*` переключается на
+   `https://{domain}/rest/{method}?auth={access_token}`; при `expired_token`
+   — один retry после обновления токена.
+
+**Риск**: `refresh_token` инвалидируется, если приложение переустановят или
+отключат — тогда `/webhook/bitrix/install` должен снова сработать (Bitrix
+всегда шлёт новую установку при переустановке).
+
+**Альтернатива (отклонена)**: остаться на статическом вебхуке и вместо
+`imconnector`/`imbot` использовать что-то, не требующее app-контекста —
+проверено эмпирически, что и `imbot`, и `imconnector` оба требуют OAuth;
+альтернативы внутри тех же REST-групп нет.

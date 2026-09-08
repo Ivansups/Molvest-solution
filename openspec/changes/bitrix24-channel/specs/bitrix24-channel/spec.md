@@ -72,14 +72,33 @@ When processing a guest message produces a reply for the guest, the system SHALL
 
 ### Requirement: Секреты Bitrix — только через окружение
 
-The system SHALL read the portal URL, application user id and application token exclusively from the environment (`BITRIX_*`). These values SHALL NOT be accepted via the API or settings endpoints, SHALL NOT be persisted in the database, and SHALL NOT appear in HTTP responses or log output. Log entries for outbound REST calls SHALL NOT contain the token.
+The system SHALL read the portal URL, application user id, application token, and OAuth client id/secret exclusively from the environment (`BITRIX_*`). These values SHALL NOT be accepted via the API or settings endpoints and SHALL NOT appear in HTTP responses or log output. Log entries for outbound REST calls SHALL NOT contain any token. OAuth access/refresh tokens obtained through installation are the one exception: they rotate and MAY be persisted in the database (see the OAuth installation requirement below), but SHALL still never appear in API responses or logs.
 
 #### Scenario: Токен не возвращается в ответе
 
 - **WHEN** any inbound webhook or settings API response is produced
-- **THEN** the response body contains no Bitrix portal URL, user id or application token
+- **THEN** the response body contains no Bitrix portal URL, user id, application token, OAuth client secret, access token, or refresh token
 
 #### Scenario: Токен не пишется в логи
 
 - **WHEN** the system logs an inbound event or an outbound REST delivery attempt
-- **THEN** the log line contains no application token
+- **THEN** the log line contains no application token, client secret, access token, or refresh token
+
+### Requirement: Методы с контекстом приложения авторизуются через OAuth
+
+Bitrix24 REST methods that create or operate system-wide bot/connector resources (`imconnector.*`, `imbot.*`) require an installed OAuth application context; a static incoming-webhook token is rejected by the portal for these methods regardless of granted scope. The system SHALL provide `POST /webhook/bitrix/install` to receive the initial installation payload (`AUTH_ID`, `REFRESH_ID`, `AUTH_EXPIRES`, `member_id`) from a local server-type application, SHALL persist the resulting token pair keyed by `member_id`, and SHALL respond with a page that completes the Bitrix installation handshake. For outbound calls to `imconnector.*`/`imbot.*` methods, the system SHALL use the stored OAuth access token rather than the static webhook token, and SHALL transparently refresh an expired access token via the stored refresh token before retrying the call once.
+
+#### Scenario: Installation stores the token pair
+
+- **WHEN** Bitrix POSTs the initial installation payload to `/webhook/bitrix/install` for a portal not previously installed
+- **THEN** the access token, refresh token, and expiry are persisted keyed by that portal's `member_id`, and the response completes the installation handshake
+
+#### Scenario: Expired access token is refreshed transparently
+
+- **WHEN** an outbound `imconnector.*` call fails with an expired-token error
+- **THEN** the system exchanges the stored refresh token for a new token pair, updates the stored record, and retries the original call once with the new access token
+
+#### Scenario: Static webhook token is not used for connector/bot methods
+
+- **WHEN** the system calls any `imconnector.*` or `imbot.*` method
+- **THEN** it authenticates with the stored OAuth access token, not `BITRIX_APP_TOKEN`
