@@ -2,7 +2,7 @@
 
 from typing import Literal, TypedDict
 
-Intent = Literal["empty", "support"]
+Intent = Literal["empty", "handoff", "support"]
 
 
 class RetrievedChunk(TypedDict):
@@ -35,3 +35,4 @@ class AgentState(TypedDict, total=False):
     answer: str
     confidence: float
     escalated: bool
+    escalation_reason: str

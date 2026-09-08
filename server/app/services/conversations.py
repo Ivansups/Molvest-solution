@@ -176,6 +176,7 @@ async def persist_turn(
     confidence: float,
     escalated: bool,
     sources: list[Source],
+    escalation_reason: str | None = None,
     user_created_at: datetime | None = None,
     channel: str | None = None,
     channel_message_id: str | None = None,
@@ -207,7 +208,7 @@ async def persist_turn(
     )
     session.add(assistant)
     if escalated:
-        reason = f"Низкая уверенность ретривала: {confidence:.2f}"
+        reason = escalation_reason or f"Низкая уверенность ретривала: {confidence:.2f}"
         escalate_conversation(
             session,
             conversation,

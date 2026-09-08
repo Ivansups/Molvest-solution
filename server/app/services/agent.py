@@ -146,6 +146,7 @@ async def run_chat_turn(
         confidence=confidence,
         escalated=escalated,
         sources=persist_sources,
+        escalation_reason=final.get("escalation_reason") or None,
         user_created_at=turn_started_at,
         channel=channel,
         channel_message_id=channel_message_id,
@@ -223,6 +224,7 @@ def _initial_state(
         "answer": "",
         "confidence": 0.0,
         "escalated": False,
+        "escalation_reason": "",
     }
 
 

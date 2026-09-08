@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.graph import build_graph
-from app.agent.nodes.classify import _EMPTY_REPLY, classify
+from app.agent.nodes.classify import _EMPTY_REPLY, HANDOFF_ESCALATION_REASON, classify
 from app.agent.nodes.generate import generate
 from app.agent.state import AgentState, RetrievedChunk
 from app.core.config import Settings
@@ -151,6 +151,57 @@ async def test_classify_rules() -> None:
     assert empty["answer"] == _EMPTY_REPLY
 
 
+async def test_classify_handoff_rules() -> None:
+    phrases = [
+        "Позовите оператора",
+        "позовите, пожалуйста, специалиста",
+        "передайте это человеку",
+        "нужен человек",
+        "соедините меня с оператором",
+        "переключите на оператора",
+        "свяжите меня со специалистом",
+        "хочу поговорить с человеком",
+        "пригласите оператора",
+        "переведите на оператора",
+    ]
+    for text in phrases:
+        result = await classify({"query": text})
+        assert result["intent"] == "handoff", text
+        assert result["escalated"] is True
+        assert result["escalation_reason"] == HANDOFF_ESCALATION_REASON
+
+
+async def test_classify_handoff_negatives() -> None:
+    """Вопросы «как …» про оператора — это запрос к базе знаний, не хэндофф."""
+    phrases = [
+        "как позвать оператора в 1с",
+        "как вызвать оператора",
+        "как связаться с оператором",
+        "как передать обращение оператору",
+        "можно ли позвать оператора",
+        "какая версия нужна оператору",
+        "как подключить оператора к задаче",
+    ]
+    for text in phrases:
+        result = await classify({"query": text})
+        assert result["intent"] == "support", text
+
+
+async def test_handoff_request_escalates_without_llm(
+    llm_mock: MagicMock, app_settings: Settings
+) -> None:
+    async def forbidden_retriever(state: AgentState) -> list[RetrievedChunk]:
+        raise AssertionError("retrieve не должен вызываться при хэндоффе")
+
+    graph = build_graph(llm_mock, app_settings, retriever=forbidden_retriever)
+    result = await graph.ainvoke(_state(text="Позовите оператора"))
+    assert result["intent"] == "handoff"
+    assert result["escalated"] is True
+    assert result["escalation_reason"] == HANDOFF_ESCALATION_REASON
+    llm_mock.generate.assert_not_called()
+    llm_mock.chat_with_vision.assert_not_called()
+
+
 async def test_run_chat_turn_maps_contract_and_persists(
     monkeypatch: pytest.MonkeyPatch,
     chat_request: ChatRequest,
@@ -238,6 +289,48 @@ async def test_run_chat_turn_replay_does_not_double_escalate(
         .where(Escalation.conversation_id == first.conversation_id)
     )
     assert count == 1
+
+
+async def test_run_chat_turn_handoff_persists_reason(
+    monkeypatch: pytest.MonkeyPatch,
+    chat_request: ChatRequest,
+    llm_mock: MagicMock,
+    app_settings: Settings,
+    reset_graph_singleton: None,
+    db_session: AsyncSession,
+) -> None:
+    from sqlalchemy import select
+
+    import app.services.agent as agent_service
+    from app.models.enums import ConversationStatus
+    from app.models.escalation import Escalation
+
+    graph = build_graph(llm_mock, app_settings)
+    monkeypatch.setattr(agent_service, "get_graph", lambda: graph)
+
+    request = chat_request.model_copy(update={"text": "Позовите оператора"})
+    response = await run_chat_turn(request, db_session)
+
+    assert response.escalated is True
+    assert "оператор" in response.text
+    assert response.sources == []
+
+    escalation = (
+        await db_session.scalars(
+            select(Escalation).where(
+                Escalation.conversation_id == response.conversation_id
+            )
+        )
+    ).first()
+    assert escalation is not None
+    assert escalation.reason == HANDOFF_ESCALATION_REASON
+    assert escalation.escalated_to == "operator"
+
+    from app.models.conversation import Conversation
+
+    conversation = await db_session.get(Conversation, response.conversation_id)
+    assert conversation is not None
+    assert conversation.status == ConversationStatus.ESCALATED
 
 
 async def test_cache_hit_skips_generate(

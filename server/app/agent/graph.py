@@ -137,7 +137,7 @@ def get_graph() -> CompiledStateGraph[AgentState, None]:
 def _after_classify(state: AgentState) -> Literal["lookup_cache", "__end__"]:
     intent = state.get("intent", "support")
     nxt: Literal["lookup_cache", "__end__"] = (
-        "__end__" if intent == "empty" else "lookup_cache"
+        "__end__" if intent in {"empty", "handoff"} else "lookup_cache"
     )
     logger.info("после classify intent=%s → %s", intent, nxt)
     return nxt
