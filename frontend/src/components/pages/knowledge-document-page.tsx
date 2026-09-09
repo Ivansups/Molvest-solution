@@ -8,6 +8,7 @@ import { useParams, useRouter } from "next/navigation";
 import { z } from "zod";
 import { ApiStateCard } from "@/src/components/common/api-state-card";
 import { FileDropzone } from "@/src/components/common/file-dropzone";
+import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 import {
@@ -29,6 +30,7 @@ import {
 import { Spinner } from "@/src/components/ui/spinner";
 import { Textarea } from "@/src/components/ui/textarea";
 import { useToast } from "@/src/hooks/use-toast";
+import { getDocumentPollingInterval } from "@/src/lib/document-polling";
 import { documentService } from "@/src/services/document-service";
 
 const schema = z.object({
@@ -52,6 +54,8 @@ export function KnowledgeDocumentPage() {
     queryKey: ["document", docId],
     queryFn: () => documentService.getDocument(docId ?? ""),
     enabled: Boolean(docId),
+    refetchInterval: (query) =>
+      getDocumentPollingInterval(query.state.data?.status),
   });
 
   const form = useForm<FormValues>({
@@ -130,7 +134,10 @@ export function KnowledgeDocumentPage() {
     <div className="space-y-6">
       <div className="flex items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-semibold text-secondary">{document.title}</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-semibold text-secondary">{document.title}</h1>
+            <Badge>{document.status}</Badge>
+          </div>
           <p className="mt-2 text-slate-500">
             Просмотр чанков и редактирование карточки документа.
           </p>

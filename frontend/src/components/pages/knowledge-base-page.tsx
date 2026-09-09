@@ -28,6 +28,7 @@ import {
   TableRow,
 } from "@/src/components/ui/table";
 import { useToast } from "@/src/hooks/use-toast";
+import { getDocumentsPollingInterval } from "@/src/lib/document-polling";
 import { formatDateTime } from "@/src/lib/format";
 import { documentService } from "@/src/services/document-service";
 import type { FileType } from "@/src/types/api";
@@ -50,6 +51,7 @@ export function KnowledgeBasePage() {
         search,
         type,
       }),
+    refetchInterval: (query) => getDocumentsPollingInterval(query.state.data),
   });
 
   const createMutation = useMutation({
