@@ -1,4 +1,4 @@
-"""Тесты стартовых узлов и графа LangGraph (classify правилами, скор ретривала)."""
+"""Тесты узлов и графа LangGraph (classify правилами, скор ретривала, handoff LLM)."""
 
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
@@ -7,10 +7,12 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.graph import build_graph
-from app.agent.nodes.classify import _EMPTY_REPLY, HANDOFF_ESCALATION_REASON, classify
+from app.agent.nodes.classify import _EMPTY_REPLY, classify
 from app.agent.nodes.generate import generate
+from app.agent.nodes.handoff_detect import HANDOFF_ESCALATION_REASON, handoff_detect
 from app.agent.state import AgentState, RetrievedChunk
 from app.core.config import Settings
+from app.core.openrouter_client import OpenRouterClassifier, OpenRouterError
 from app.schemas.chat import ChatRequest
 from app.services.agent import run_chat_turn
 
@@ -50,6 +52,19 @@ async def _hit_retriever(state: AgentState) -> list[RetrievedChunk]:
 async def _empty_retriever(state: AgentState) -> list[RetrievedChunk]:
     """Ничего не нашли — граф эскалирует, не вызывая generate."""
     return []
+
+
+def _classifier(handoff: bool = False, *, raises: bool = False) -> MagicMock:
+    """Мок классификатора OpenRouter: ответ YES/NO или сбой."""
+    classifier = MagicMock(spec=OpenRouterClassifier)
+    if raises:
+        classifier.is_handoff_request = AsyncMock(
+            side_effect=OpenRouterError("сбой классификатора")
+        )
+    else:
+        classifier.is_handoff_request = AsyncMock(return_value=handoff)
+    classifier.is_configured.return_value = True
+    return classifier
 
 
 @pytest.fixture
@@ -151,40 +166,51 @@ async def test_classify_rules() -> None:
     assert empty["answer"] == _EMPTY_REPLY
 
 
-async def test_classify_handoff_rules() -> None:
-    phrases = [
-        "Позовите оператора",
-        "позовите, пожалуйста, специалиста",
-        "передайте это человеку",
-        "нужен человек",
-        "соедините меня с оператором",
-        "переключите на оператора",
-        "свяжите меня со специалистом",
-        "хочу поговорить с человеком",
-        "пригласите оператора",
-        "переведите на оператора",
-    ]
-    for text in phrases:
-        result = await classify({"query": text})
-        assert result["intent"] == "handoff", text
-        assert result["escalated"] is True
-        assert result["escalation_reason"] == HANDOFF_ESCALATION_REASON
+async def test_handoff_detect_yes_escalates() -> None:
+    classifier = _classifier(handoff=True)
+    result = await handoff_detect(
+        {"query": "Позовите оператора"}, classifier=classifier
+    )
+    assert result["intent"] == "handoff"
+    assert result["escalated"] is True
+    assert result["escalation_reason"] == HANDOFF_ESCALATION_REASON
+    classifier.is_handoff_request.assert_awaited_once_with("Позовите оператора")
 
 
-async def test_classify_handoff_negatives() -> None:
-    """Вопросы «как …» про оператора — это запрос к базе знаний, не хэндофф."""
-    phrases = [
-        "как позвать оператора в 1с",
-        "как вызвать оператора",
-        "как связаться с оператором",
-        "как передать обращение оператору",
-        "можно ли позвать оператора",
-        "какая версия нужна оператору",
-        "как подключить оператора к задаче",
-    ]
-    for text in phrases:
-        result = await classify({"query": text})
-        assert result["intent"] == "support", text
+async def test_handoff_detect_no_keeps_support() -> None:
+    """Вопросы «как …» про оператора — запрос к базе знаний, не хэндофф."""
+    classifier = _classifier(handoff=False)
+    result = await handoff_detect(
+        {"query": "как позвать оператора в 1с"}, classifier=classifier
+    )
+    assert result == {}
+    classifier.is_handoff_request.assert_awaited_once_with("как позвать оператора в 1с")
+
+
+async def test_handoff_detect_error_falls_back_to_support() -> None:
+    classifier = _classifier(raises=True)
+    result = await handoff_detect(
+        {"query": "Позовите оператора"}, classifier=classifier
+    )
+    assert result == {}
+    classifier.is_handoff_request.assert_awaited_once()
+
+
+async def test_handoff_detect_not_configured_skips() -> None:
+    classifier = _classifier(handoff=True)
+    classifier.is_configured.return_value = False
+    result = await handoff_detect(
+        {"query": "Позовите оператора"}, classifier=classifier
+    )
+    assert result == {}
+    classifier.is_handoff_request.assert_not_awaited()
+
+
+async def test_handoff_detect_empty_query_skips() -> None:
+    classifier = _classifier(handoff=True)
+    result = await handoff_detect({"query": "   "}, classifier=classifier)
+    assert result == {}
+    classifier.is_handoff_request.assert_not_awaited()
 
 
 async def test_handoff_request_escalates_without_llm(
@@ -193,13 +219,75 @@ async def test_handoff_request_escalates_without_llm(
     async def forbidden_retriever(state: AgentState) -> list[RetrievedChunk]:
         raise AssertionError("retrieve не должен вызываться при хэндоффе")
 
-    graph = build_graph(llm_mock, app_settings, retriever=forbidden_retriever)
+    graph = build_graph(
+        llm_mock,
+        app_settings,
+        retriever=forbidden_retriever,
+        handoff_classifier=_classifier(handoff=True),
+    )
     result = await graph.ainvoke(_state(text="Позовите оператора"))
     assert result["intent"] == "handoff"
     assert result["escalated"] is True
     assert result["escalation_reason"] == HANDOFF_ESCALATION_REASON
     llm_mock.generate.assert_not_called()
     llm_mock.chat_with_vision.assert_not_called()
+
+
+async def test_handoff_no_goes_to_support(
+    llm_mock: MagicMock, app_settings: Settings
+) -> None:
+    """«как позвать оператора в 1с» — NO: граф идёт через retrieve/generate."""
+    llm_mock.generate = AsyncMock(return_value="Ответ из базы")
+    graph = build_graph(
+        llm_mock,
+        app_settings,
+        retriever=_hit_retriever,
+        handoff_classifier=_classifier(handoff=False),
+    )
+    result = await graph.ainvoke(_state(text="как позвать оператора в 1с"))
+    assert result["intent"] == "support"
+    assert result["escalated"] is False
+    assert result["answer"] == "Ответ из базы"
+    llm_mock.generate.assert_awaited_once()
+
+
+async def test_handoff_error_falls_back_to_support(
+    llm_mock: MagicMock, app_settings: Settings
+) -> None:
+    """Сбой классификатора не роняет чат — обычный путь поддержки."""
+    llm_mock.generate = AsyncMock(return_value="Ответ из базы")
+    graph = build_graph(
+        llm_mock,
+        app_settings,
+        retriever=_hit_retriever,
+        handoff_classifier=_classifier(raises=True),
+    )
+    result = await graph.ainvoke(_state(text="Позовите оператора"))
+    assert result["intent"] == "support"
+    assert result["escalated"] is False
+    assert result["answer"] == "Ответ из базы"
+    llm_mock.generate.assert_awaited_once()
+
+
+async def test_handoff_classifier_disabled_skips_detection(
+    llm_mock: MagicMock, app_settings: Settings
+) -> None:
+    """Ключ OpenRouter не задан — хэндофф не детектится, путь поддержки."""
+    llm_mock.generate = AsyncMock(return_value="Ответ из базы")
+    classifier = _classifier(handoff=True)
+    classifier.is_configured.return_value = False
+    graph = build_graph(
+        llm_mock,
+        app_settings,
+        retriever=_hit_retriever,
+        handoff_classifier=classifier,
+    )
+    result = await graph.ainvoke(_state(text="Позовите оператора"))
+    assert result["intent"] == "support"
+    assert result["escalated"] is False
+    assert result["answer"] == "Ответ из базы"
+    classifier.is_handoff_request.assert_not_awaited()
+    llm_mock.generate.assert_awaited_once()
 
 
 async def test_run_chat_turn_maps_contract_and_persists(
@@ -305,7 +393,11 @@ async def test_run_chat_turn_handoff_persists_reason(
     from app.models.enums import ConversationStatus
     from app.models.escalation import Escalation
 
-    graph = build_graph(llm_mock, app_settings)
+    graph = build_graph(
+        llm_mock,
+        app_settings,
+        handoff_classifier=_classifier(handoff=True),
+    )
     monkeypatch.setattr(agent_service, "get_graph", lambda: graph)
 
     request = chat_request.model_copy(update={"text": "Позовите оператора"})

@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     # Локально сертификат НУЦ Минцифры часто не установлен.
     gigachat_verify_ssl_certs: bool = False
     gigachat_timeout: float = 60.0
+    # --- OpenRouter: лёгкая модель для классификации (handoff-детект) ---
+    # Пустой ключ — детект хэндоффа отключён (узел не вызывается).
+    openrouter_api_key: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_model: str = "meta-llama/llama-3.1-8b-instruct"
+    openrouter_timeout: float = 10.0
     database_url: str = "postgresql+asyncpg://postgres:postgres@db:5432/molvest"
     redis_url: str = "redis://redis:6379/0"
     confidence_threshold: float = 0.8
