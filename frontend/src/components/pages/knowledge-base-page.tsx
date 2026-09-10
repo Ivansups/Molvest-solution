@@ -6,8 +6,8 @@ import { Pencil, Plus, RefreshCcw, Search, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { ApiStateCard } from "@/src/components/common/api-state-card";
 import { DataTablePagination } from "@/src/components/common/data-table-pagination";
+import { DocumentStatusBadge } from "@/src/components/common/document-status-badge";
 import { DocumentUploadDialog } from "@/src/components/common/document-upload-dialog";
-import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 import { Input } from "@/src/components/ui/input";
@@ -28,6 +28,11 @@ import {
   TableRow,
 } from "@/src/components/ui/table";
 import { useToast } from "@/src/hooks/use-toast";
+import {
+  getDocumentsPollingInterval,
+  unwatchDocument,
+  watchDocument,
+} from "@/src/lib/document-polling";
 import { formatDateTime } from "@/src/lib/format";
 import { documentService } from "@/src/services/document-service";
 import type { FileType } from "@/src/types/api";
@@ -50,6 +55,7 @@ export function KnowledgeBasePage() {
         search,
         type,
       }),
+    refetchInterval: (query) => getDocumentsPollingInterval(query.state.data),
   });
 
   const createMutation = useMutation({
@@ -70,7 +76,9 @@ export function KnowledgeBasePage() {
           originalFileName: values.file?.name ?? values.title,
         },
       }),
-    onSuccess: async () => {
+    onSuccess: async (document) => {
+      watchDocument(document.id);
+      setPage(1);
       setDialogOpen(false);
       await queryClient.invalidateQueries({ queryKey: ["documents"] });
       toast({
@@ -88,7 +96,8 @@ export function KnowledgeBasePage() {
 
   const deleteMutation = useMutation({
     mutationFn: (docId: string) => documentService.deleteDocument(docId),
-    onSuccess: async () => {
+    onSuccess: async (_result, docId) => {
+      unwatchDocument(docId);
       await queryClient.invalidateQueries({ queryKey: ["documents"] });
       toast({
         title: "Документ удалён",
@@ -105,8 +114,10 @@ export function KnowledgeBasePage() {
 
   const reindexMutation = useMutation({
     mutationFn: (docId: string) => documentService.reindexDocument(docId),
-    onSuccess: async () => {
+    onSuccess: async (_result, docId) => {
+      watchDocument(docId);
       await queryClient.invalidateQueries({ queryKey: ["documents"] });
+      await queryClient.invalidateQueries({ queryKey: ["document", docId] });
       toast({
         title: "Реиндексация запущена",
         description: "Документ переведён в актуальное состояние.",
@@ -217,7 +228,7 @@ export function KnowledgeBasePage() {
                     <TableCell>{item.file_type}</TableCell>
                     <TableCell>{formatDateTime(item.uploaded_at)}</TableCell>
                     <TableCell>
-                      <Badge>{item.status}</Badge>
+                      <DocumentStatusBadge status={item.status} />
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">

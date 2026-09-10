@@ -8,6 +8,7 @@ import {
   ShieldCheck,
   Timer,
 } from "lucide-react";
+import { DocumentStatusBadge } from "@/src/components/common/document-status-badge";
 import { StatsCard } from "@/src/components/common/stats-card";
 import { Badge } from "@/src/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
@@ -150,7 +151,7 @@ export function DashboardPage({
                       <TableCell>{item.title}</TableCell>
                       <TableCell>{item.file_type}</TableCell>
                       <TableCell>
-                        <Badge>{item.status}</Badge>
+                        <DocumentStatusBadge status={item.status} />
                       </TableCell>
                       <TableCell>{formatDateTime(item.uploaded_at)}</TableCell>
                     </TableRow>
