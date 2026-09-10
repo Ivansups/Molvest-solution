@@ -13,14 +13,16 @@ RAG-ответ вместо передачи оператору. Клиент в
 - Новый узел графа `handoff_detect` после `classify`: вызывает лёгкую LLM
   (OpenRouter, meta-llama/llama-3.1-8b-instruct) для классификации запроса —
   `YES` (просьба передать человеку) → эскалация сразу, без retrieve/generate;
-  `NO` → обычный путь support. Пустой ключ OpenRouter — детект пропускается.
+  `NO` → обычный путь support. Пустой ключ OpenRouter — тот же YES/NO через
+  GigaChat-2 (Lite). Сбой обоих классификаторов — эскалация, не RAG.
 - Классификатор `OpenRouterClassifier` в `core/openrouter_client.py`: строгий
-  YES/NO промпт, timeout 10 сек, `temperature=0`. Синглтон с параметрами из env;
-  для тестов — мок через `MagicMock(spec=OpenRouterClassifier)`.
+  YES/NO промпт из `agent/prompts.py`, timeout 5 сек, `temperature=0`.
+  Синглтон с параметрами из env; для тестов — мок.
 - `classify` остаётся без LLM и без правил хэндоффа: только `empty`/`support`
   (как было до регэкспов). Нода `handoff_detect` отвечает за детект хэндоффа.
-- Сбой классификатора (сеть/HTTP/неразборчивый ответ) — фолбэк в `support`,
-  чат не роняется.
+- Сбой OpenRouter — тихий фолбэк на GigaChat-2. Сбой GigaChat после этого
+  (или одного GigaChat, если ключа OpenRouter нет) — эскалация с причиной
+  «Сбой детекта передачи оператору».
 - В графе `_after_classify`: `empty` → `__end__`, `support` → `handoff_detect`;
   `_after_handoff_detect`: `handoff` → `__end__`, `support` → `lookup_cache`.
 - Прокинуть `escalation_reason` из состояния графа в персист: при хэндоффе тикет
@@ -34,9 +36,9 @@ RAG-ответ вместо передачи оператору. Клиент в
 
 ### New Capabilities
 
-- `handoff-classification`: LLM-классификатор хэндоффа на OpenRouter: промпт,
-  модель, таймаут, фолбэк при сбое, отключение при пустом ключе. Нода
-  `handoff_detect` в графе, вызывающая классификатор.
+- `handoff-classification`: LLM-классификатор хэндоффа: промпт в
+  `agent/prompts.py`, OpenRouter, фолбэк на GigaChat-2, эскалация если оба
+  недоступны. Нода `handoff_detect` в графе.
 
 ### Modified Capabilities
 

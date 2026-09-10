@@ -44,7 +44,7 @@ def build_graph(
         return await retrieve(state, retriever=effective_retriever)
 
     async def handoff_detect_node(state: AgentState) -> dict[str, object]:
-        return await handoff_detect(state, classifier=effective_classifier)
+        return await handoff_detect(state, classifier=effective_classifier, llm=llm)
 
     builder.add_node("vision", vision_node)
     builder.add_node("classify", classify)

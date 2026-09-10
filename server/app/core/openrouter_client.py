@@ -9,19 +9,10 @@ import logging
 
 import httpx
 
+from app.agent.prompts import HANDOFF_SYSTEM_PROMPT
 from app.core.config import Settings, settings
 
 logger = logging.getLogger(__name__)
-
-# Промпт-классификатор: строгий ответ одной меткой, без пояснений.
-_HANDOFF_SYSTEM_PROMPT = (
-    "Ты классификатор запросов техподдержки ПО 1С. Отвечай строго ОДНИМ словом: "
-    "YES если пользователь просит передать диалог живому человеку "
-    "(позвать/вызвать/соединить/передать оператору или специалисту, «нужен человек», "
-    "«хочу поговорить с человеком») — или NO во всех остальных случаях. "
-    "Вопрос «как позвать оператора в 1С», «что делает оператор» — это НЕ просьба, "
-    "отвечай NO. Никакого текста кроме YES или NO."
-)
 
 _MAX_TOKENS = 5
 
@@ -73,7 +64,7 @@ class OpenRouterClassifier:
         payload = {
             "model": self._settings.openrouter_model,
             "messages": [
-                {"role": "system", "content": _HANDOFF_SYSTEM_PROMPT},
+                {"role": "system", "content": HANDOFF_SYSTEM_PROMPT},
                 {"role": "user", "content": text},
             ],
             "max_tokens": _MAX_TOKENS,

@@ -19,19 +19,24 @@ class Settings(BaseSettings):
     gigachat_api_key: str = ""
     gigachat_api_url: str = ""
     gigachat_model: str = "GigaChat-2"
+    # Lite для детекта хэндоффа, если OpenRouter недоступен. В API Lite = GigaChat-2.
+    gigachat_classify_model: str = "GigaChat-2"
     # Имя модели POST /embeddings. Смена на другую размерность
     # (EmbeddingsGigaR = 2560) требует миграции колонки chunks.embedding.
     gigachat_embeddings_model: str = "Embeddings"
     gigachat_scope: str = "GIGACHAT_API_PERS"
     # Локально сертификат НУЦ Минцифры часто не установлен.
     gigachat_verify_ssl_certs: bool = False
-    gigachat_timeout: float = 60.0
+    # Generate и Vision. Виджет ждёт 60 с — один вызов должен уложиться.
+    gigachat_timeout: float = 40.0
+    # YES/NO хэндоффа: короткий лимит, чтобы не съесть бюджет хода.
+    gigachat_classify_timeout: float = 8.0
     # --- OpenRouter: лёгкая модель для классификации (handoff-детект) ---
-    # Пустой ключ — детект хэндоффа отключён (узел не вызывается).
+    # Пустой ключ — классификация через GigaChat-2 (Lite), детект не выключается.
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_model: str = "meta-llama/llama-3.1-8b-instruct"
-    openrouter_timeout: float = 10.0
+    openrouter_timeout: float = 5.0
     database_url: str = "postgresql+asyncpg://postgres:postgres@db:5432/molvest"
     redis_url: str = "redis://redis:6379/0"
     confidence_threshold: float = 0.8

@@ -1,5 +1,6 @@
 """Юнит-тесты обёртки GigaChat — без реальных вызовов API."""
 
+import asyncio
 import base64
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
@@ -14,7 +15,7 @@ from gigachat.models import (
 from pydantic import ValidationError
 
 from app.core.config import Settings
-from app.core.gigachat_client import GigaChatService
+from app.core.gigachat_client import GigaChatError, GigaChatService
 
 
 def _chat_response(text: str) -> ChatCompletionResponse:
@@ -26,6 +27,7 @@ def _chat_response(text: str) -> ChatCompletionResponse:
 def _service(
     *,
     embeddings_model: str = "Embeddings",
+    classify_timeout: float = 8.0,
 ) -> tuple[GigaChatService, MagicMock]:
     client = MagicMock()
     client.achat.create = AsyncMock(return_value=_chat_response("ok"))
@@ -38,6 +40,7 @@ def _service(
         gigachat_api_key="test-key",
         gigachat_model="GigaChat-2",
         gigachat_embeddings_model=embeddings_model,
+        gigachat_classify_timeout=classify_timeout,
     )
     return GigaChatService(settings, client=cast(GigaChat, client)), client
 
@@ -47,6 +50,37 @@ async def test_generate_extracts_text() -> None:
     text = await service.generate([{"role": "user", "content": "привет"}])
     assert text == "ok"
     client.achat.create.assert_awaited_once()
+    request = client.achat.create.await_args.args[0]
+    assert request.model is None
+
+
+async def test_classify_handoff_yes() -> None:
+    service, client = _service()
+    client.achat.create = AsyncMock(return_value=_chat_response("YES"))
+    assert (
+        await service.classify_handoff("позовите оператора", system_prompt="p") is True
+    )
+    request = client.achat.create.await_args.args[0]
+    assert request.model == "GigaChat-2"
+
+
+async def test_classify_handoff_rejects_garbage() -> None:
+    service, client = _service()
+    client.achat.create = AsyncMock(return_value=_chat_response("может быть"))
+    with pytest.raises(GigaChatError, match="Неожиданный ответ"):
+        await service.classify_handoff("позовите оператора", system_prompt="p")
+
+
+async def test_classify_handoff_times_out() -> None:
+    service, client = _service(classify_timeout=0.05)
+
+    async def _slow(*_args: object, **_kwargs: object) -> ChatCompletionResponse:
+        await asyncio.sleep(1)
+        return _chat_response("YES")
+
+    client.achat.create = _slow
+    with pytest.raises(GigaChatError):
+        await service.classify_handoff("позовите оператора", system_prompt="p")
 
 
 async def test_chat_with_vision_adds_data_url_prefix() -> None:

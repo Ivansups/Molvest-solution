@@ -1,7 +1,7 @@
 """Тесты узлов и графа LangGraph (classify правилами, скор ретривала, handoff LLM)."""
 
 from unittest.mock import AsyncMock, MagicMock
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,9 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.graph import build_graph
 from app.agent.nodes.classify import _EMPTY_REPLY, classify
 from app.agent.nodes.generate import generate
-from app.agent.nodes.handoff_detect import HANDOFF_ESCALATION_REASON, handoff_detect
+from app.agent.nodes.handoff_detect import (
+    DETECTOR_FAILURE_REASON,
+    HANDOFF_ESCALATION_REASON,
+    handoff_detect,
+)
 from app.agent.state import AgentState, RetrievedChunk
 from app.core.config import Settings
+from app.core.gigachat_client import GigaChatError, GigaChatService
 from app.core.openrouter_client import OpenRouterClassifier, OpenRouterError
 from app.schemas.chat import ChatRequest
 from app.services.agent import run_chat_turn
@@ -65,6 +70,19 @@ def _classifier(handoff: bool = False, *, raises: bool = False) -> MagicMock:
         classifier.is_handoff_request = AsyncMock(return_value=handoff)
     classifier.is_configured.return_value = True
     return classifier
+
+
+def _llm(*, handoff: bool = False, raises: bool = False) -> MagicMock:
+    """Мок GigaChat: YES/NO хэндоффа или сбой Lite-классификации."""
+    llm = MagicMock(spec=GigaChatService)
+    llm.generate = AsyncMock(return_value="")
+    llm.chat_with_vision = AsyncMock(return_value="")
+    llm.get_embeddings = AsyncMock(return_value=[])
+    if raises:
+        llm.classify_handoff = AsyncMock(side_effect=GigaChatError("сбой GigaChat"))
+    else:
+        llm.classify_handoff = AsyncMock(return_value=handoff)
+    return llm
 
 
 @pytest.fixture
@@ -168,49 +186,78 @@ async def test_classify_rules() -> None:
 
 async def test_handoff_detect_yes_escalates() -> None:
     classifier = _classifier(handoff=True)
+    llm = _llm()
     result = await handoff_detect(
-        {"query": "Позовите оператора"}, classifier=classifier
+        {"query": "Позовите оператора"}, classifier=classifier, llm=llm
     )
     assert result["intent"] == "handoff"
     assert result["escalated"] is True
     assert result["escalation_reason"] == HANDOFF_ESCALATION_REASON
     classifier.is_handoff_request.assert_awaited_once_with("Позовите оператора")
+    llm.classify_handoff.assert_not_awaited()
 
 
 async def test_handoff_detect_no_keeps_support() -> None:
     """Вопросы «как …» про оператора — запрос к базе знаний, не хэндофф."""
     classifier = _classifier(handoff=False)
+    llm = _llm()
     result = await handoff_detect(
-        {"query": "как позвать оператора в 1с"}, classifier=classifier
+        {"query": "как позвать оператора в 1с"}, classifier=classifier, llm=llm
     )
     assert result == {}
     classifier.is_handoff_request.assert_awaited_once_with("как позвать оператора в 1с")
+    llm.classify_handoff.assert_not_awaited()
 
 
-async def test_handoff_detect_error_falls_back_to_support() -> None:
+async def test_handoff_detect_openrouter_error_falls_back_to_gigachat() -> None:
+    """Сбой OpenRouter — тот же YES/NO через GigaChat Lite."""
     classifier = _classifier(raises=True)
+    llm = _llm(handoff=True)
     result = await handoff_detect(
-        {"query": "Позовите оператора"}, classifier=classifier
+        {"query": "Позовите оператора"}, classifier=classifier, llm=llm
     )
-    assert result == {}
+    assert result["intent"] == "handoff"
+    assert result["escalated"] is True
+    assert result["escalation_reason"] == HANDOFF_ESCALATION_REASON
     classifier.is_handoff_request.assert_awaited_once()
+    llm.classify_handoff.assert_awaited_once()
 
 
-async def test_handoff_detect_not_configured_skips() -> None:
+async def test_handoff_detect_both_fail_escalates() -> None:
+    """Оба классификатора упали — тикет, не ответ из базы."""
+    classifier = _classifier(raises=True)
+    llm = _llm(raises=True)
+    result = await handoff_detect(
+        {"query": "Позовите оператора"}, classifier=classifier, llm=llm
+    )
+    assert result["intent"] == "handoff"
+    assert result["escalated"] is True
+    assert result["escalation_reason"] == DETECTOR_FAILURE_REASON
+    llm.classify_handoff.assert_awaited_once()
+
+
+async def test_handoff_detect_not_configured_uses_gigachat() -> None:
+    """Пустой ключ OpenRouter — классификация GigaChat, детект не выключается."""
     classifier = _classifier(handoff=True)
     classifier.is_configured.return_value = False
+    llm = _llm(handoff=True)
     result = await handoff_detect(
-        {"query": "Позовите оператора"}, classifier=classifier
+        {"query": "Позовите оператора"}, classifier=classifier, llm=llm
     )
-    assert result == {}
+    assert result["intent"] == "handoff"
+    assert result["escalated"] is True
+    assert result["escalation_reason"] == HANDOFF_ESCALATION_REASON
     classifier.is_handoff_request.assert_not_awaited()
+    llm.classify_handoff.assert_awaited_once()
 
 
 async def test_handoff_detect_empty_query_skips() -> None:
     classifier = _classifier(handoff=True)
-    result = await handoff_detect({"query": "   "}, classifier=classifier)
+    llm = _llm(handoff=True)
+    result = await handoff_detect({"query": "   "}, classifier=classifier, llm=llm)
     assert result == {}
     classifier.is_handoff_request.assert_not_awaited()
+    llm.classify_handoff.assert_not_awaited()
 
 
 async def test_handoff_request_escalates_without_llm(
@@ -251,11 +298,11 @@ async def test_handoff_no_goes_to_support(
     llm_mock.generate.assert_awaited_once()
 
 
-async def test_handoff_error_falls_back_to_support(
+async def test_handoff_error_falls_back_to_gigachat(
     llm_mock: MagicMock, app_settings: Settings
 ) -> None:
-    """Сбой классификатора не роняет чат — обычный путь поддержки."""
-    llm_mock.generate = AsyncMock(return_value="Ответ из базы")
+    """Сбой OpenRouter — GigaChat Lite классифицирует, retrieve не нужен при YES."""
+    llm_mock.classify_handoff = AsyncMock(return_value=True)
     graph = build_graph(
         llm_mock,
         app_settings,
@@ -263,17 +310,40 @@ async def test_handoff_error_falls_back_to_support(
         handoff_classifier=_classifier(raises=True),
     )
     result = await graph.ainvoke(_state(text="Позовите оператора"))
-    assert result["intent"] == "support"
-    assert result["escalated"] is False
-    assert result["answer"] == "Ответ из базы"
-    llm_mock.generate.assert_awaited_once()
+    assert result["intent"] == "handoff"
+    assert result["escalated"] is True
+    assert result["escalation_reason"] == HANDOFF_ESCALATION_REASON
+    llm_mock.classify_handoff.assert_awaited_once()
+    llm_mock.generate.assert_not_called()
 
 
-async def test_handoff_classifier_disabled_skips_detection(
+async def test_handoff_both_classifiers_fail_escalates(
     llm_mock: MagicMock, app_settings: Settings
 ) -> None:
-    """Ключ OpenRouter не задан — хэндофф не детектится, путь поддержки."""
-    llm_mock.generate = AsyncMock(return_value="Ответ из базы")
+    """OpenRouter и GigaChat упали — эскалация, не автоответ из базы."""
+
+    async def forbidden_retriever(state: AgentState) -> list[RetrievedChunk]:
+        raise AssertionError("retrieve не должен вызываться при сбое детекта")
+
+    llm_mock.classify_handoff = AsyncMock(side_effect=GigaChatError("сбой"))
+    graph = build_graph(
+        llm_mock,
+        app_settings,
+        retriever=forbidden_retriever,
+        handoff_classifier=_classifier(raises=True),
+    )
+    result = await graph.ainvoke(_state(text="Позовите оператора"))
+    assert result["intent"] == "handoff"
+    assert result["escalated"] is True
+    assert result["escalation_reason"] == DETECTOR_FAILURE_REASON
+    llm_mock.generate.assert_not_called()
+
+
+async def test_handoff_classifier_disabled_uses_gigachat(
+    llm_mock: MagicMock, app_settings: Settings
+) -> None:
+    """Ключ OpenRouter не задан — детект идёт через GigaChat Lite."""
+    llm_mock.classify_handoff = AsyncMock(return_value=True)
     classifier = _classifier(handoff=True)
     classifier.is_configured.return_value = False
     graph = build_graph(
@@ -283,11 +353,11 @@ async def test_handoff_classifier_disabled_skips_detection(
         handoff_classifier=classifier,
     )
     result = await graph.ainvoke(_state(text="Позовите оператора"))
-    assert result["intent"] == "support"
-    assert result["escalated"] is False
-    assert result["answer"] == "Ответ из базы"
+    assert result["intent"] == "handoff"
+    assert result["escalated"] is True
     classifier.is_handoff_request.assert_not_awaited()
-    llm_mock.generate.assert_awaited_once()
+    llm_mock.classify_handoff.assert_awaited_once()
+    llm_mock.generate.assert_not_called()
 
 
 async def test_run_chat_turn_maps_contract_and_persists(
@@ -423,6 +493,50 @@ async def test_run_chat_turn_handoff_persists_reason(
     conversation = await db_session.get(Conversation, response.conversation_id)
     assert conversation is not None
     assert conversation.status == ConversationStatus.ESCALATED
+
+
+async def test_run_chat_turn_handoff_replay_does_not_double_escalate(
+    monkeypatch: pytest.MonkeyPatch,
+    chat_request: ChatRequest,
+    llm_mock: MagicMock,
+    app_settings: Settings,
+    reset_graph_singleton: None,
+    db_session: AsyncSession,
+) -> None:
+    """Повтор «позовите оператора» не создаёт второй тикет."""
+    from sqlalchemy import func, select
+
+    import app.services.agent as agent_service
+    from app.models.conversation import Conversation
+    from app.models.enums import ConversationStatus
+    from app.models.escalation import Escalation
+
+    graph = build_graph(
+        llm_mock,
+        app_settings,
+        handoff_classifier=_classifier(handoff=True),
+    )
+    monkeypatch.setattr(agent_service, "get_graph", lambda: graph)
+
+    request = chat_request.model_copy(update={"text": "Позовите оператора"})
+    first = await run_chat_turn(request, db_session)
+    replay = request.model_copy(
+        update={
+            "conversation_id": first.conversation_id,
+            "message_id": uuid4(),
+        }
+    )
+    await run_chat_turn(replay, db_session)
+
+    conversation = await db_session.get(Conversation, first.conversation_id)
+    assert conversation is not None
+    assert conversation.status == ConversationStatus.ESCALATED
+    count = await db_session.scalar(
+        select(func.count())
+        .select_from(Escalation)
+        .where(Escalation.conversation_id == first.conversation_id)
+    )
+    assert count == 1
 
 
 async def test_cache_hit_skips_generate(

@@ -42,7 +42,7 @@ For intent `empty` the system SHALL return a fixed template and SHALL NOT call G
 
 ### Requirement: Handoff detection runs a lightweight LLM
 
-After `classify` sets intent `support`, before any cache lookup or retrieve, the system SHALL run a `handoff_detect` node that asks a lightweight LLM classifier via OpenRouter whether the user asks to hand the dialog to a human. The classifier SHALL return a strict YES/NO. A `YES` SHALL set intent `handoff`, `escalated=true` and `escalation_reason` to the handoff reason, and the graph SHALL end without a cache lookup, retrieve, or generate. A `NO` SHALL keep intent `support` and continue to the answer cache lookup. A classifier failure (network, HTTP, or unparseable reply) SHALL fall back to `support` and continue the normal path. When the OpenRouter API key is empty, detection SHALL be skipped and the graph SHALL continue as if `NO`.
+After `classify` sets intent `support`, before any cache lookup or retrieve, the system SHALL run a `handoff_detect` node that asks a lightweight LLM classifier whether the user asks to hand the dialog to a human. The primary classifier is OpenRouter. When the OpenRouter API key is empty or OpenRouter fails (network, HTTP, or unparseable reply), the same YES/NO prompt SHALL be sent to GigaChat-2 (Lite). The classifier SHALL return a strict YES/NO. A `YES` SHALL set intent `handoff`, `escalated=true` and `escalation_reason` to the handoff reason, and the graph SHALL end without a cache lookup, retrieve, or generate. A `NO` SHALL keep intent `support` and continue to the answer cache lookup. If both classifiers fail, the system SHALL escalate with the detector-failure reason and SHALL NOT continue to retrieve or generate.
 
 #### Scenario: Imperative handoff escalates before RAG
 
@@ -59,12 +59,17 @@ After `classify` sets intent `support`, before any cache lookup or retrieve, the
 - **WHEN** the user sends «как позвать оператора в 1С» or «как связаться с оператором» and the classifier returns `NO`
 - **THEN** intent is `support` and the graph continues to retrieve / generate
 
-#### Scenario: Classifier failure falls back to support
+#### Scenario: OpenRouter failure falls back to GigaChat
 
-- **WHEN** the classifier raises or returns an unparseable answer
-- **THEN** intent stays `support` and the graph continues to retrieve / generate without failing the turn
+- **WHEN** OpenRouter raises or returns an unparseable answer and GigaChat-2 returns `YES`
+- **THEN** intent is `handoff`, `escalated=true`, and the graph ends without retrieve or generate
 
-#### Scenario: Empty API key disables detection
+#### Scenario: Both classifiers fail escalates
 
-- **WHEN** the OpenRouter API key is empty and the user sends «позовите оператора»
-- **THEN** the detector is not invoked and the graph continues the normal support path
+- **WHEN** OpenRouter fails and GigaChat-2 also raises or returns an unparseable answer
+- **THEN** intent is `handoff`, `escalated=true`, the reason is the detector-failure reason, and the graph does not retrieve or generate
+
+#### Scenario: Empty OpenRouter key uses GigaChat
+
+- **WHEN** the OpenRouter API key is empty and the user sends «позовите оператора» and GigaChat-2 returns `YES`
+- **THEN** OpenRouter is not invoked, intent is `handoff`, and the graph ends without retrieve or generate
