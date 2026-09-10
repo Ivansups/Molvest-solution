@@ -52,6 +52,7 @@ def app_settings() -> Settings:
 def llm_mock() -> MagicMock:
     mock = MagicMock(spec=GigaChatService)
     mock.generate = AsyncMock(return_value="")
+    mock.classify_handoff = AsyncMock(return_value=False)
     mock.chat_with_vision = AsyncMock(return_value="")
     mock.get_embeddings = AsyncMock(return_value=[])
     return mock

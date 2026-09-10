@@ -1,0 +1,35 @@
+## 1. OpenRouter-адаптер и нода `handoff_detect`
+
+- [x] 1.1 `app/core/config.py`: настройки `openrouter_api_key` (по умолчанию `""`), `openrouter_base_url`, `openrouter_model`, `openrouter_timeout`
+- [x] 1.2 `app/core/openrouter_client.py`: `OpenRouterClassifier` (`is_handoff_request`, `_classify`, `is_configured`), `OpenRouterError`, `get_openrouter_classifier()`; синквер `httpx.AsyncClient`, `max_tokens=5`, `temperature=0`
+- [x] 1.3 `app/agent/nodes/handoff_detect.py`: нода `handoff_detect(state, *, classifier, llm)`; `HANDOFF_ESCALATION_REASON` / `DETECTOR_FAILURE_REASON`; пустой OpenRouter или его сбой → GigaChat-2; сбой обоих → эскалация
+- [x] 1.4 `app/agent/nodes/classify.py`: регэкспы удалены, только `empty`/`support`, без вызова GigaChat
+- [x] 1.5 `.env.example`: блок OpenRouter с пояснением «пустой ключ = детект через GigaChat-2»
+- [x] 1.6 `app/agent/prompts.py`: `HANDOFF_SYSTEM_PROMPT` рядом с Vision/generate
+- [x] 1.7 `GigaChatService.classify_handoff` + `gigachat_classify_model` (`GigaChat-2`)
+
+## 2. Маршрутизация графа
+
+- [x] 2.1 `app/agent/graph.py`: нода `handoff_detect`; `build_graph(..., handoff_classifier=None)` (дефолт — `get_openrouter_classifier()`); `_after_classify`: empty → `__end__`, support → `handoff_detect`; `_after_handoff_detect`: handoff → `__end__`, support → `lookup_cache`
+
+## 3. Причина эскалации сквозь персист
+
+- [x] 3.1 `app/services/conversations.py`: `persist_turn(..., escalation_reason: str | None = None)`; `reason = escalation_reason or f"Низкая уверенность ретривала: {confidence:.2f}"`
+- [x] 3.2 `app/services/agent.py`: вызов `persist_turn` передаёт `escalation_reason=final.get("escalation_reason") or None`
+
+## 4. Тесты
+
+- [x] 4.1 `test_agent_graph.py::test_handoff_detect_yes_escalates`: классификатор YES → `intent=handoff`, `escalated=True`, `HANDOFF_ESCALATION_REASON` (нода)
+- [x] 4.2 `test_agent_graph.py::test_handoff_detect_no_keeps_support`: вопросы «как … оператора» c NO остаются `support` (нода)
+- [x] 4.3 `test_agent_graph.py::test_handoff_detect_openrouter_error_falls_back_to_gigachat` / `test_handoff_detect_both_fail_escalates`: сбой OpenRouter → GigaChat; оба упали → эскалация
+- [x] 4.4 `test_agent_graph.py::test_handoff_detect_not_configured_uses_gigachat` / `test_handoff_detect_empty_query_skips`: пустой ключ → GigaChat; пустой query — пропуск
+- [x] 4.5 `test_agent_graph.py::test_handoff_request_escalates_without_llm`: граф с YES-классификатором — retrieve/generate не вызваны
+- [x] 4.6 `test_agent_graph.py::test_handoff_no_goes_to_support` / `test_handoff_error_falls_back_to_gigachat` / `test_handoff_both_classifiers_fail_escalates` / `test_handoff_classifier_disabled_uses_gigachat`
+- [x] 4.7 `test_agent_graph.py::test_run_chat_turn_handoff_persists_reason`: статус `escalated`, один `Escalation` с причиной хэндоффа, гостю фраза с «оператор»
+- [x] 4.8 `test_agent_graph.py::test_run_chat_turn_handoff_replay_does_not_double_escalate`: повтор хэндоффа — один `Escalation`
+
+## 5. Quality gate
+
+- [x] 5.1 `cd server && uv run ruff check . && uv run ruff format --check . && uv run mypy .`
+- [x] 5.2 `cd server && uv run pytest` (кроме pre-existing `test_bitrix_oauth.py::test_install_stores_token_pair` — live-вызов Bitrix из `.env`, падает без изменений и до этой работы)
+- [x] 5.3 `cd server && uv run alembic check` (миграций нет)

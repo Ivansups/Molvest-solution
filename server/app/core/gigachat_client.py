@@ -1,5 +1,6 @@
 """Единый клиент GigaChat: генерация, Vision и эмбеддинги."""
 
+import asyncio
 import logging
 from collections.abc import Sequence
 from typing import Literal, TypedDict
@@ -17,6 +18,10 @@ from app.core.config import Settings, settings
 logger = logging.getLogger(__name__)
 
 ChatRole = Literal["system", "user", "assistant"]
+
+
+class GigaChatError(Exception):
+    """Ошибка обращения к GigaChat: сеть, SDK или неразборчивый ответ."""
 
 
 class ChatTurn(TypedDict):
@@ -45,20 +50,64 @@ class GigaChatService:
             max_retries=3,
         )
 
-    async def generate(self, messages: Sequence[ChatTurn]) -> str:
+    async def generate(
+        self,
+        messages: Sequence[ChatTurn],
+        *,
+        model: str | None = None,
+    ) -> str:
         """Отправляет диалог в GigaChat и возвращает текст ответа."""
+        chosen_model = model or self._settings.gigachat_model
         chars = sum(len(turn["content"]) for turn in messages)
         logger.info(
             "GigaChat generate model=%s turns=%s chars=%s",
-            self._settings.gigachat_model,
+            chosen_model,
             len(messages),
             chars,
         )
-        request = ChatCompletionRequest(messages=_to_messages(messages))
+        if model is None:
+            request = ChatCompletionRequest(messages=_to_messages(messages))
+        else:
+            request = ChatCompletionRequest(
+                messages=_to_messages(messages),
+                model=model,
+            )
         response = await self._client.achat.create(request)
         text = _extract_text(response)
         logger.info("GigaChat generate готов chars=%s", len(text))
         return text
+
+    async def classify_handoff(self, text: str, *, system_prompt: str) -> bool:
+        """YES/NO классификация хэндоффа моделью Lite (`GigaChat-2`)."""
+        model = self._settings.gigachat_classify_model
+        timeout = self._settings.gigachat_classify_timeout
+        logger.info(
+            "GigaChat classify_handoff model=%s timeout=%s chars=%s",
+            model,
+            timeout,
+            len(text),
+        )
+        try:
+            content = await asyncio.wait_for(
+                self.generate(
+                    [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": text},
+                    ],
+                    model=model,
+                ),
+                timeout=timeout,
+            )
+        except Exception as exc:
+            logger.warning("GigaChat classify_handoff сбой: %s", exc)
+            raise GigaChatError(str(exc)) from exc
+        answer = content.strip().upper()
+        if answer == "YES":
+            return True
+        if answer == "NO":
+            return False
+        logger.warning("GigaChat классификатор ответил неоднозначно: %r", content)
+        raise GigaChatError(f"Неожиданный ответ классификатора: {content!r}")
 
     async def chat_with_vision(self, image_base64: str, prompt: str) -> str:
         """Описывает скриншот через Vision. На вход — сырая base64-строка."""

@@ -25,11 +25,11 @@ The system SHALL read operator assist mode from one effective configuration valu
 
 ### Requirement: Escalation does not call generate
 
-When a conversation first escalates because retrieval is below the confidence threshold, the system SHALL NOT call generate. It SHALL persist the guest escalation phrase, create the Escalation row, leave `suggested_response` empty, and return `escalated=true`.
+When a conversation first escalates because retrieval is below the confidence threshold on the guest `POST /chat` path (widget / support console), the system SHALL NOT call generate. It SHALL persist the guest escalation phrase, create the Escalation row, leave `suggested_response` empty, and return `escalated=true`. Bitrix and Redmine channel turns SHALL follow `bitrix-escalation-handoff` instead: they fill `suggested_response` after commit and SHALL NOT send the draft to the guest.
 
 #### Scenario: First escalation has no draft
 
-- **WHEN** a guest message on an `open` conversation scores below the threshold
+- **WHEN** a guest message on an `open` conversation scores below the threshold via `POST /chat`
 - **THEN** the conversation becomes `escalated`, one Escalation row exists, `suggested_response` is empty, generate was not called, and the HTTP text is the guest escalation phrase
 
 ### Requirement: Escalated draft mode does not call the model
@@ -43,7 +43,7 @@ When conversation status is `escalated` and assist mode is `draft`, a later gues
 
 ### Requirement: Operator can generate a draft on demand
 
-The system SHALL provide `POST /api/conversations/{id}/suggest` authenticated with the internal service token. The body SHALL include `installation_id`. For an `escalated` conversation in that installation the system SHALL run retrieve and generate against the latest guest message and history, store the model text in `suggested_response`, and SHALL NOT append a user or assistant message or change status. This SHALL be the only path that fills an operator draft. The graph SHALL NOT open its own database session. A conversation that is not `escalated`, belongs to another installation, or has no guest message SHALL NOT generate a draft.
+The system SHALL provide `POST /api/conversations/{id}/suggest` authenticated with the internal service token. The body SHALL include `installation_id`. For an `escalated` conversation in that installation the system SHALL run retrieve and generate against the latest guest message and history, store the model text in `suggested_response`, and SHALL NOT append a user or assistant message or change status. This SHALL be the only on-demand console path that fills an operator draft; the live Bitrix thread assist in draft mode may also fill `suggested_response` automatically while processing a user message in the thread. The graph SHALL NOT open its own database session. A conversation that is not `escalated`, belongs to another installation, or has no guest message SHALL NOT generate a draft.
 
 #### Scenario: Operator generates the draft
 

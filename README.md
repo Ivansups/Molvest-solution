@@ -1,10 +1,89 @@
 # Molvest AI-Agent
 
 AI-агент техподдержки 1С для АО «Молвест»: ответы по базе знаний (RAG),
-анализ скриншотов ошибок 1С, эскалация оператору при низкой уверенности.
-Ядро — **GigaChat**.
+анализ скриншотов ошибок 1С, эскалация оператору. Ядро ответов — **GigaChat**.
+«Позовите оператора» ловит отдельная нода (OpenRouter, иначе GigaChat-2).
 
-[Что внутри](#что-внутри) · [Быстрый старт](#быстрый-старт) · [Команды Make](#команды-make) · [Проблемы при запуске](#проблемы-при-запуске)
+[Как работает](#как-работает) · [Быстрый старт](#быстрый-старт) · [Документация](#документация)
+
+## Что это
+
+Четыре сценария ТЗ, один диалоговый граф. Разбор каждого —
+[`docs/SCENARIOS.md`](docs/SCENARIOS.md).
+
+| Сценарий | Поверхностно |
+| --- | --- |
+| 1. Вопрос текстом | Bitrix / Redmine / виджет → поиск в базе → ответ или человек |
+| 2. Подсказка оператору | после эскалации в `draft` бот молчит гостю, черновик в `/operator` |
+| 3. Скриншот 1С | картинка → Vision → тот же поиск и порог, что у текста |
+| 4. База знаний | админка: загрузка документов, чанки, эмбеддинги |
+
+Порог уверенности (~80%) и явная просьба «нужен человек» — два пути к
+оператору. Гостю при эскалации: «Вопрос передан оператору техподдержки.»
+В Bitrix гостю тишина, черновик — оператору.
+
+## Как работает
+
+Вход виджета и каналов — `POST /chat` (`run_chat_turn`). Ядро не знает,
+Bitrix это или браузер.
+
+### До и после графа
+
+```mermaid
+flowchart TD
+  A["POST /chat"] --> B{"Диалог resolved?"}
+  B -->|да| C["409 Диалог уже закрыт"]
+  B -->|нет| D{"status=escalated и режим draft?"}
+  D -->|да| E["только реплика гостя, граф не запускается"]
+  E --> F["фраза: вопрос передан оператору"]
+  D -->|нет / auto / новый чат| G["история → LangGraph"]
+  G --> H{"граф: escalated?"}
+  H -->|да и диалог уже escalated| E
+  H -->|да, первый раз| I["open → escalated, тикет, гостю фраза"]
+  H -->|нет| J["ответ GigaChat + источники"]
+  I --> K["ChatResponse"]
+  J --> K
+  F --> K
+```
+
+На виджете первая эскалация **без** черновика в `suggested_response`.
+Bitrix и Redmine после commit считают черновик сами.
+
+### Граф
+
+```mermaid
+flowchart TD
+  START --> vision
+  vision["vision: картинка → GigaChat Vision, иначе текст как есть"]
+  vision --> classify
+  classify{"query пустой?"}
+  classify -->|да| END1["шаблон: опишите проблему"]
+  classify -->|нет| HD["handoff_detect"]
+
+  HD --> HDQ{"ключ OpenRouter есть?"}
+  HDQ -->|да| OR["OpenRouter YES/NO, 5 с"]
+  OR -->|YES| ESC["хэндофф: явный запрос передачи оператору"]
+  OR -->|NO| CACHE
+  OR -->|сбой| GC
+  HDQ -->|нет| GC["GigaChat-2 Lite YES/NO, 8 с"]
+  GC -->|YES| ESC
+  GC -->|NO| CACHE
+  GC -->|сбой| FAIL["хэндофф: сбой детекта передачи оператору"]
+
+  ESC --> END2["END без поиска и generate"]
+  FAIL --> END2
+
+  CACHE["кэш ответа Redis"]
+  CACHE -->|попадание| END3["END из кэша"]
+  CACHE -->|промах| retrieve["поиск в pgvector"]
+  retrieve --> TH{"скор ≥ порога ~0.8?"}
+  TH -->|нет| END4["эскалация: низкая уверенность"]
+  TH -->|да| generate["GigaChat generate, 40 с"]
+  generate --> END5["END ответ гостю"]
+```
+
+Если гость зовёт человека или детект сломался — **не** отвечаем из базы.
+RAG только после NO.
 
 ## Что внутри
 
@@ -12,9 +91,10 @@ AI-агент техподдержки 1С для АО «Молвест»: от�
 | --- | --- | --- |
 | API | FastAPI, Python 3.12, uv | Docker (`make up`) или локально (`make api`) |
 | БД | PostgreSQL 16 + pgvector | Docker (`make up` или `make db`) |
-| UI | Next.js 16, pnpm | Docker (`make up` / `make frontend`) |
+| UI | Next.js, pnpm | Docker (`make up` / `make frontend`) |
 
-`make up` поднимает Postgres, API и Next.js и **обязательно** применяет миграции Alembic до того, как API начнёт отвечать. UI доступен на http://localhost:3000.
+`make up` поднимает Postgres, API и Next.js и применяет миграции Alembic
+до того, как API начнёт отвечать. UI: http://localhost:3000.
 
 ## Быстрый старт
 
@@ -25,290 +105,44 @@ AI-агент техподдержки 1С для АО «Молвест»: от�
 ```bash
 git clone <repo-url>
 cd Molvest-solution
-make setup          # создаёт .env, поднимает API + Postgres + UI, ждёт готовности
+make setup          # .env + API + Postgres + UI
 ```
-
-Проверка API:
 
 | URL | Назначение |
 | --- | --- |
-| http://localhost:8000/health | живость сервиса (`{"status":"ok"}`) |
-| http://localhost:8000/docs | Swagger |
-| http://localhost:8000/chat | `POST`, контракт чата |
-| http://localhost:5432 | Postgres (`postgres` / `postgres`, БД `molvest`) |
-| http://localhost:3000 | Next.js |
+| http://localhost:3000 | консоль и виджет |
+| http://localhost:8000/health | живость API |
+| http://localhost:8000/docs | Swagger, в том числе `POST /chat` |
 
 > [!IMPORTANT]
-> `docker compose` **упадёт без файла `.env`**: в `docker-compose.yml` указан
-> `env_file: .env`. `make setup` / `make env` копируют его из `.env.example`.
-> Не коммитьте `.env`.
+> Без `.env` в корне `docker compose` падает. `make setup` копирует его из
+> [`.env.example`](.env.example). Файл не коммитить.
 
-`GIGACHAT_API_KEY` нужен только для реальных ответов модели. `/health`
-работает с пустым ключом.
-
+`GIGACHAT_API_KEY` нужен для ответов по 1С. `/health` живёт и без ключа.
 Ключ: [developers.sber.ru/gigachat](https://developers.sber.ru/gigachat).
 
-## Требования для локальной разработки
+Make, два способа гонять API, env и типичные поломки —
+[`docs/DEV.md`](docs/DEV.md). Проверки качества — GitHub Actions на PR и `main`.
 
-Если API и UI крутите в Docker, Python и Node на машине не обязательны:
-зависимости UI ставятся внутри контейнера. Node/pnpm нужны для
-`make lint-frontend`, `make test-frontend` и `make api` на хосте.
+## Каналы
 
-| Инструмент | Версия | Зачем | Установка |
-| --- | --- | --- | --- |
-| Docker Desktop | с плагином Compose v2 (`docker compose`) | API + Postgres | [документация Docker](https://docs.docker.com/get-started/get-docker/) |
-| uv | любой свежий | Python-зависимости, **не** pip/poetry | [astral.sh/uv](https://docs.astral.sh/uv/getting-started/installation/) |
-| Python | ≥ 3.12 | ставит сам uv (`server/.python-version`) | через uv |
-| pnpm | 11.x (см. `packageManager` в `frontend/package.json`) | фронтенд, **не** npm/yarn | `corepack enable && corepack prepare pnpm@11.17.0 --activate` |
-| Node.js | 20+ | Next.js | [nodejs.org](https://nodejs.org/) |
+Ядро одно. Специфика протокола — в адаптере канала.
 
-Порты **3000**, **5432**, **8000** должны быть свободны.
-
-```bash
-make install        # uv sync + pnpm install
-```
-
-## Переменные окружения
-
-Шаблон — [`.env.example`](.env.example). Живой файл — `.env` в **корне** репозитория
-(его читает Compose и, при запуске из `server/`, бэкенд).
-
-| Переменная | Обязательна сейчас | Комментарий |
-| --- | --- | --- |
-| `GIGACHAT_API_KEY` | нет для `/health` | без ключа агент не ответит по сути |
-| `GIGACHAT_API_URL` | нет | значение по умолчанию уже в шаблоне |
-| `DATABASE_URL` | да для Docker | хост **`db`** — имя сервиса Compose |
-| `POSTGRES_USER` / `PASSWORD` / `DB` | да | должны совпадать с URL |
-| `CONFIDENCE_THRESHOLD` | нет | порог эскалации, по умолчанию `0.8` |
-| `TOP_K`, `MAX_CHUNK_SIZE` | нет | RAG, пока не задействованы |
-| `INTERNAL_SERVICE_TOKEN` | нет | Next.js → FastAPI; пусто — backend не проверяет |
-| `API_INTERNAL_URL` | нет | в Compose у `web` всегда `http://api:8000` |
-| `AUTH_SECRET` | да для входа в UI | подпись JWT-куки Auth.js; шаблон заполнен |
-| `AUTH_DATABASE_URL` | да для входа в UI | та же БД драйвером Prisma, схема `auth` (домен ведёт Alembic) |
-
-> [!WARNING]
-> В `.env` хост БД — `db`. Так и должно быть для контейнера API.
-> `make api` **сам** подставляет `localhost`, не меняйте `.env` ради локального uvicorn.
-> Если заменить `db` → `localhost` в `.env`, контейнер API перестанет видеть Postgres.
-
-## Интеграция Bitrix24 (открытые линии)
-
-**Куда тыкать на портале, ngrok, `.env` и два контура** — пошагово:
-[`docs/BITRIX.md`](docs/BITRIX.md). Сценарий 1 по ТЗ:
-[`docs/SCENARIOS.md`](docs/SCENARIOS.md).
-
-Два контура рядом. Ядро агента одно (`run_chat_turn`).
-
-| Контур | Где пишет клиент | Вход | Ответ |
-| --- | --- | --- | --- |
-| Бот открытой линии (ТЗ) | Онлайн-чат линии в Bitrix | `POST /webhook/bitrix/bot` | `imbot.message.add` |
-| Кастомный коннектор | Сторонняя платформа / API | `POST /webhook/bitrix/openlines` | `imconnector.send.messages` |
-
-Переменные окружения (`BITRIX_*`, см. [`.env.example`](.env.example)):
-
-| Переменная | Назначение |
+| Канал | Куда смотреть |
 | --- | --- |
-| `BITRIX_PORTAL_URL` | базовый URL портала, напр. `https://molvest.bitrix24.ru` |
-| `BITRIX_APP_USER_ID` | пользователь приложения для исходящих сообщений |
-| `BITRIX_APP_TOKEN` | ключ исходящего REST-вебхука (Base URL `/rest/…`) |
-| `BITRIX_APPLICATION_TOKEN` | секрет валидации входящих событий; **не пустое** — иначе 403 |
-| `BITRIX_CONNECTOR_ID` | код/`id` коннектора открытой линии |
-| `BITRIX_LINE_ID` | линия открытой линии |
-| `BITRIX_CLIENT_ID` / `BITRIX_CLIENT_SECRET` | OAuth локального приложения |
-| `BITRIX_BOT_CODE` | код бота (`imbot.register`), по умолчанию `molvest_support` |
-| `BITRIX_HANDLER_BASE_URL` | публичный URL API (ngrok). Пусто — бот не регистрируется |
-
-Права приложения: `imconnector`, `imopenlines`, `imbot`, `im`, `disk`,
-`placement`. Смена scope у уже установленного приложения — кнопка
-«Переустановить».
-
-### Бот + онлайн-чат (окно клиента по ТЗ)
-
-1. В карточке приложения выдать scope `imbot` и переустановить.
-2. Задать `BITRIX_HANDLER_BASE_URL=https://<ngrok>` и `BITRIX_BOT_CODE`.
-3. Установка приложения дергает `POST /webhook/bitrix/install` — бот
-   регистрируется сам (повторно не плодится).
-4. Контакт-центр → та же `BITRIX_LINE_ID` → включить канал «Онлайн-чат».
-   Если бот не в очереди линии — добавить вручную.
-5. Открыть тестовый онлайн-чат, написать как клиент. Ответ агента приходит
-   в то же окно. Ниже порога — тишина гостю, черновик в `/operator`.
-   Скриншот в том же чате идёт в vision. После эскалации в `draft` бот
-   больше не отвечает гостю (сценарий 2); для демо Q&A — `OPERATOR_ASSIST_MODE=auto`.
-
-### Кастомный коннектор (сторонние платформы)
-
-1. В настройках коннектора указать
-   `https://<наш-хост>/webhook/bitrix/openlines`.
-2. Внешний канал шлёт сообщения через `imconnector.send.messages`.
-   Окна клиента в Bitrix у этого контура нет — это ожидаемо.
-
-Проверка: повтор той же доставки даёт `status: "duplicate"` без повторного
-запуска графа. Секреты ни в UI, ни в `/settings`, ни в логи не попадают.
-
-## Интеграция Redmine HelpDesk
-
-Входящий контракт для тестов и демо без почтового ящика:
-`POST /webhook/redmine` (тот же служебный заголовок `X-Internal-Token`,
-что у `POST /webhook/bitrix`). Тело: `ticket_id`, `message_id`,
-`sender` (`user` / `operator`), `text`. Ответ агента — заметка в тикет
-(`REDMINE_URL` + `REDMINE_API_KEY`) после записи в БД. Ниже порога в тикет
-гостю ничего не пишем, черновик — в консоли.
-
-IMAP (`REDMINE_IMAP_*`) опционален: пустой хост — поллера нет, вебхук жив.
-
-| Переменная | Назначение |
-| --- | --- |
-| `REDMINE_URL` | базовый URL Redmine без хвоста |
-| `REDMINE_API_KEY` | ключ REST для заметки в тикет |
-| `REDMINE_IMAP_HOST` | хост ящика; пусто — не опрашиваем почту |
-| `REDMINE_IMAP_PORT` / `USER` / `PASSWORD` | IMAP |
-| `REDMINE_SMTP_*` | запасной исходящий путь, если REST не задан |
-
-## Команды Make
-
-`make` без аргументов печатает список.
-
-| Команда | Что делает |
-| --- | --- |
-| `make setup` | `.env` + сборка/запуск Docker (API + UI) + ожидание готовности |
-| `make env` | копирует `.env.example` → `.env`, если файла нет |
-| `make up` | Postgres + API + UI, миграции, ожидание `/health` и `:3000` |
-| `make down` | остановить контейнеры (данные БД остаются) |
-| `make restart` | перезапуск контейнеров |
-| `make logs` | логи API, UI и Postgres |
-| `make ps` | статус контейнеров |
-| `make health` | ждать API `/health`, UI `:3000` и `/backend/health` |
-| `make db` | только Postgres (для `make api`) |
-| `make migrate` | повторный `alembic upgrade head` в уже запущенном API |
-| `make api` | uvicorn на машине, `:8000`, hot-reload |
-| `make frontend` | Next.js в Docker на `:3000` |
-| `make install` | зависимости backend и frontend на хосте (для линтеров) |
-| `make test` | pytest + vitest (vitest — на хосте, нужен pnpm) |
-| `make lint` | ruff + mypy + eslint + tsc |
-| `make fmt` | автоформат Python |
-| `make clean` | `compose down -v` — **удаляет тома Postgres, Redis и UI** |
-
-Линтеры, тесты и сборка Docker-образов автоматически прогоняются в GitHub Actions на каждый PR и push в main (`.github/workflows/ci.yml`).
-
-Миграции гоняет entrypoint контейнера API перед uvicorn. `make up` не завершится, пока `/health` не ответит (схема уже на месте). `make migrate` нужен, только если применили новую ревизию без перезапуска контейнера.
-
-## Два способа гонять API
-
-### 1. Docker (обычный путь)
-
-```bash
-make setup
-# правки в server/ и frontend/ подхватываются (volume + reload)
-make logs          # если что-то не поднялось
-```
-
-### 2. Uvicorn на машине, БД в Docker
-
-```bash
-make db            # Postgres на localhost:5432
-make install-server
-make api           # DATABASE_URL с localhost выставляется здесь
-```
-
-Не запускайте `make up` и `make api` одновременно: оба занимают порт 8000.
-
-## Проверка руками
-
-```bash
-curl -s http://localhost:8000/health
-# {"status":"ok"}
-
-curl -s -X POST http://localhost:8000/chat \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "message_id": "11111111-1111-1111-1111-111111111111",
-    "workspace_id": "demo",
-    "conversation_id": null,
-    "text": "Как провести документ?",
-    "image_base64": null,
-    "user_id": "u1"
-  }'
-```
-
-Контракт `POST /chat` — в `server/app/schemas/chat.py` и в OpenAPI (`/docs`).
-Документы базы знаний — `http://localhost:8000/docs` → `/api/documents`.
-
-## Проблемы при запуске
-
-**`env file .env not found` / Compose сразу падает**  
-Нет `.env` в корне. `make env` или `cp .env.example .env`.
-
-**`make: command not found` (Windows)**  
-Используйте WSL или Git Bash, либо те же шаги вручную (см. ниже).
-
-**`Cannot connect to the Docker daemon` / `docker compose` не находится**  
-Запустите Docker Desktop. Нужен Compose v2: `docker compose version`.
-Старый бинарь `docker-compose` не используется.
-
-**Порт 5432 / 8000 / 3000 занят**
-
-```bash
-lsof -i :5432 -i :8000 -i :3000
-```
-
-Остановите чужой Postgres/API или смените проброс портов в `docker-compose.yml`.
-
-**API не отвечает, `make health` истекает**
-
-```bash
-make ps
-make logs
-```
-
-Частая причина после первого клона — долгая сборка образа. Дождитесь
-`Started server process` в логах `api`.
-
-**`could not translate host name "db"` при `make api`**  
-Uvicorn читает `DATABASE_URL` с хостом `db` из `.env`. Запускайте именно
-`make api` (он подменяет URL) или экспортируйте
-`DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/molvest`.
-
-**`connection refused` к Postgres с хоста**  
-Сначала `make db` или `make up`. Пока `pg_isready` не зелёный, подключаться рано.
-
-**`uv: command not found` / `pnpm: command not found`**  
-См. таблицу требований. Не ставьте зависимости через pip/npm.
-
-**Первый `pnpm install` ругается на store / Node**  
-Нужен Node 20+. Включите Corepack:  
-`corepack enable && corepack prepare pnpm@11.17.0 --activate`.
-
-**GigaChat: SSL / 401 / пустой ответ**  
-Проверьте `GIGACHAT_API_KEY` в `.env` (без кавычек и пробелов) и
-перезапустите API: `make restart`. На `/health` ключ не влияет.
-
-**Сломали БД и хотите с нуля**  
-`make clean && make setup` — том Postgres будет пустой.
-
-## Без Make (те же шаги)
-
-```bash
-cp .env.example .env
-docker compose up -d --build   # API сам сделает alembic upgrade head
-curl -s http://localhost:8000/health
-# UI: http://localhost:3000
-
-# локальный backend (UI всё равно в Docker: docker compose up -d web)
-docker compose up -d db
-cd server
-uv sync --all-groups
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/molvest \
-  uv run alembic upgrade head
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/molvest \
-  uv run uvicorn app.main:app --reload
-```
+| Виджет | этот README, `POST /chat` |
+| Bitrix24 (онлайн-чат и коннектор) | [`docs/BITRIX.md`](docs/BITRIX.md) |
+| Redmine HelpDesk | [`docs/REDMINE.md`](docs/REDMINE.md) |
 
 ## Документация
 
 | Файл | Содержание |
 | --- | --- |
-| [AGENTS.md](AGENTS.md) | стек, слои, инварианты, линтеры |
+| [docs/DEV.md](docs/DEV.md) | запуск, Make, `.env`, troubleshooting |
+| [docs/BITRIX.md](docs/BITRIX.md) | портал, ngrok, бот и коннектор |
+| [docs/REDMINE.md](docs/REDMINE.md) | вебхук тикета, IMAP |
+| [docs/SCENARIOS.md](docs/SCENARIOS.md) | 4 сценария ТЗ |
+| [docs/TESTS.md](docs/TESTS.md) | что какой тест закрывает |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | этапы и критерии готовности |
-| [docs/SCENARIOS.md](docs/SCENARIOS.md) | 4 сценария агента |
-| [docs/TESTS.md](docs/TESTS.md) | карта тестов: что гонять и что какой файл закрывает |
+| [AGENTS.md](AGENTS.md) | стек и инварианты для AI-агентов |
 | [docs/technical spec/](docs/technical%20spec/) | исходное ТЗ хакатона |
