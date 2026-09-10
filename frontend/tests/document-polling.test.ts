@@ -1,49 +1,87 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   DOCUMENT_POLL_INTERVAL_MS,
+  clearWatchedDocuments,
   getDocumentPollingInterval,
   getDocumentsPollingInterval,
+  watchDocument,
 } from "@/src/lib/document-polling";
 import type { DocumentListOut } from "@/src/types/api";
 
-const documentList = (statuses: DocumentListOut["items"][number]["status"][]) => ({
-  items: statuses.map((status, index) => ({
-    id: String(index),
+const documentList = (
+  rows: Array<{ id: string; status: DocumentListOut["items"][number]["status"] }>,
+) => ({
+  items: rows.map((row) => ({
+    id: row.id,
     installation_id: "installation",
-    title: `Документ ${index}`,
-    file_name: `document-${index}.pdf`,
+    title: row.id,
+    file_name: `${row.id}.pdf`,
     file_type: "PDF" as const,
-    status,
-    uploaded_at: "2026-09-09T00:00:00Z",
+    status: row.status,
+    uploaded_at: "2026-09-10T00:00:00Z",
     indexed_at: null,
     metadata: {},
   })),
 });
 
 describe("document polling", () => {
-  it("polls the list while any document is pending", () => {
-    expect(getDocumentsPollingInterval(documentList(["INDEXED", "PENDING"]))).toBe(
+  beforeEach(() => {
+    clearWatchedDocuments();
+  });
+
+  it("does not poll the list just because a document is pending", () => {
+    expect(
+      getDocumentsPollingInterval(documentList([{ id: "a", status: "PENDING" }])),
+    ).toBe(false);
+  });
+
+  it("polls the list only for documents watched after upload or reindex", () => {
+    watchDocument("b");
+    expect(
+      getDocumentsPollingInterval(
+        documentList([
+          { id: "a", status: "PENDING" },
+          { id: "b", status: "PENDING" },
+        ]),
+      ),
+    ).toBe(DOCUMENT_POLL_INTERVAL_MS);
+  });
+
+  it("stops list polling when the watched document is final", () => {
+    watchDocument("b");
+    expect(
+      getDocumentsPollingInterval(
+        documentList([
+          { id: "a", status: "PENDING" },
+          { id: "b", status: "INDEXED" },
+        ]),
+      ),
+    ).toBe(false);
+  });
+
+  it("does not poll the list when the watched document is not on this page", () => {
+    watchDocument("missing");
+    expect(
+      getDocumentsPollingInterval(documentList([{ id: "a", status: "PENDING" }])),
+    ).toBe(false);
+  });
+
+  it("does not poll a pending card that we did not start indexing", () => {
+    expect(getDocumentPollingInterval("a", "PENDING")).toBe(false);
+  });
+
+  it("polls the card only while the watched document is pending", () => {
+    watchDocument("a");
+    expect(getDocumentPollingInterval("a", "PENDING")).toBe(
       DOCUMENT_POLL_INTERVAL_MS,
     );
   });
 
-  it("stops list polling when all documents are final", () => {
-    expect(getDocumentsPollingInterval(documentList(["INDEXED", "FAILED"]))).toBe(false);
-  });
-
-  it("stops list polling for an empty or not-yet-loaded result", () => {
-    expect(getDocumentsPollingInterval(documentList([]))).toBe(false);
-    expect(getDocumentsPollingInterval(undefined)).toBe(false);
-  });
-
-  it("polls the card only while its document is pending", () => {
-    expect(getDocumentPollingInterval("PENDING")).toBe(DOCUMENT_POLL_INTERVAL_MS);
-  });
-
   it.each(["INDEXED", "FAILED"] as const)(
-    "stops card polling for %s",
+    "stops card polling for watched %s",
     (status) => {
-      expect(getDocumentPollingInterval(status)).toBe(false);
+      watchDocument("a");
+      expect(getDocumentPollingInterval("a", status)).toBe(false);
     },
   );
 });

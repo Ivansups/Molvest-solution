@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Controller, useForm } from "react-hook-form";
 import { useParams, useRouter } from "next/navigation";
 import { z } from "zod";
 import { ApiStateCard } from "@/src/components/common/api-state-card";
+import { DocumentStatusBadge } from "@/src/components/common/document-status-badge";
 import { FileDropzone } from "@/src/components/common/file-dropzone";
-import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 import {
@@ -49,13 +49,14 @@ export function KnowledgeDocumentPage() {
   const { toast } = useToast();
   const [versionDialogOpen, setVersionDialogOpen] = useState(false);
   const [versionFileName, setVersionFileName] = useState<string | null>(null);
+  const primedFormDocId = useRef<string | null>(null);
 
   const documentQuery = useQuery({
     queryKey: ["document", docId],
     queryFn: () => documentService.getDocument(docId ?? ""),
     enabled: Boolean(docId),
     refetchInterval: (query) =>
-      getDocumentPollingInterval(query.state.data?.status),
+      getDocumentPollingInterval(docId, query.state.data?.status),
   });
 
   const form = useForm<FormValues>({
@@ -69,16 +70,20 @@ export function KnowledgeDocumentPage() {
 
   useEffect(() => {
     const document = documentQuery.data;
-    if (!document) {
+    if (!document || !docId) {
       return;
     }
+    if (primedFormDocId.current === docId) {
+      return;
+    }
+    primedFormDocId.current = docId;
 
     form.reset({
       title: document.title,
       category: String(document.metadata.category ?? "Без категории"),
       description: String(document.metadata.description ?? "Без описания"),
     });
-  }, [documentQuery.data, form]);
+  }, [docId, documentQuery.data, form]);
 
   const updateMutation = useMutation({
     mutationFn: (values: FormValues) =>
@@ -136,7 +141,7 @@ export function KnowledgeDocumentPage() {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-3xl font-semibold text-secondary">{document.title}</h1>
-            <Badge>{document.status}</Badge>
+            <DocumentStatusBadge status={document.status} />
           </div>
           <p className="mt-2 text-slate-500">
             Просмотр чанков и редактирование карточки документа.
