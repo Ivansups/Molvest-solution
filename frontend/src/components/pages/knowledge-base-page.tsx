@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, RefreshCcw, Search, Trash2 } from "lucide-react";
+import { Files, Pencil, Plus, RefreshCcw, Search, SearchX, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { ApiStateCard } from "@/src/components/common/api-state-card";
 import { DataTablePagination } from "@/src/components/common/data-table-pagination";
@@ -151,6 +151,10 @@ export function KnowledgeBasePage() {
     );
   }
 
+  const items = documentsQuery.data.items;
+  const hasActiveFilters = search.trim() !== "" || type !== "all";
+  const showEmptyState = items.length === 0;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -201,71 +205,83 @@ export function KnowledgeBasePage() {
             </Select>
           </div>
         </CardHeader>
-        <CardContent className="p-0">
-          <>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Название</TableHead>
-                  <TableHead>Тип</TableHead>
-                  <TableHead>Дата обновления</TableHead>
-                  <TableHead>Статус</TableHead>
-                  <TableHead className="text-right">Действия</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {documentsQuery.data.items.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell>
-                      <button
-                        type="button"
-                        className="text-left font-medium text-secondary hover:underline"
-                        onClick={() => router.push(`/knowledge-base/${item.id}`)}
-                      >
-                        {item.title}
-                      </button>
-                    </TableCell>
-                    <TableCell>{item.file_type}</TableCell>
-                    <TableCell>{formatDateTime(item.uploaded_at)}</TableCell>
-                    <TableCell>
-                      <DocumentStatusBadge status={item.status} />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
+        <CardContent className={showEmptyState ? "px-6 pb-8 pt-0" : "p-0"}>
+          {showEmptyState ? (
+            <DocumentsEmptyState
+              filtered={hasActiveFilters}
+              onAdd={() => setDialogOpen(true)}
+              onReset={() => {
+                setSearch("");
+                setType("all");
+                setPage(1);
+              }}
+            />
+          ) : (
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Название</TableHead>
+                    <TableHead>Тип</TableHead>
+                    <TableHead>Дата обновления</TableHead>
+                    <TableHead>Статус</TableHead>
+                    <TableHead className="text-right">Действия</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {items.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell>
+                        <button
+                          type="button"
+                          className="text-left font-medium text-secondary hover:underline"
                           onClick={() => router.push(`/knowledge-base/${item.id}`)}
                         >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => reindexMutation.mutate(item.id)}
-                        >
-                          <RefreshCcw className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => deleteMutation.mutate(item.id)}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-            <DataTablePagination
-              page={page}
-              pageSize={10}
-              total={documentsQuery.data.total}
-              onPageChange={setPage}
-            />
-          </>
+                          {item.title}
+                        </button>
+                      </TableCell>
+                      <TableCell>{item.file_type}</TableCell>
+                      <TableCell>{formatDateTime(item.uploaded_at)}</TableCell>
+                      <TableCell>
+                        <DocumentStatusBadge status={item.status} />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => router.push(`/knowledge-base/${item.id}`)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => reindexMutation.mutate(item.id)}
+                          >
+                            <RefreshCcw className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => deleteMutation.mutate(item.id)}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <DataTablePagination
+                page={page}
+                pageSize={10}
+                total={documentsQuery.data.total}
+                onPageChange={setPage}
+              />
+            </>
+          )}
         </CardContent>
       </Card>
       <DocumentUploadDialog
@@ -275,6 +291,42 @@ export function KnowledgeBasePage() {
           await createMutation.mutateAsync(values);
         }}
       />
+    </div>
+  );
+}
+
+function DocumentsEmptyState({
+  filtered,
+  onAdd,
+  onReset,
+}: {
+  filtered: boolean;
+  onAdd: () => void;
+  onReset: () => void;
+}) {
+  const Icon = filtered ? SearchX : Files;
+  const title = filtered ? "Ничего не найдено" : "Документов пока нет";
+  const hint = filtered
+    ? "Измените название или тип файла — в реестре нет подходящих документов."
+    : "Загрузите инструкцию, регламент или справку — агент будет отвечать по этим материалам.";
+
+  return (
+    <div className="flex flex-col items-center px-6 py-12 text-center">
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary/10 text-secondary">
+        <Icon className="h-6 w-6" />
+      </div>
+      <h2 className="mt-4 text-lg font-semibold text-secondary">{title}</h2>
+      <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">{hint}</p>
+      {filtered ? (
+        <Button variant="outline" className="mt-5" onClick={onReset}>
+          Сбросить фильтры
+        </Button>
+      ) : (
+        <Button className="mt-5" onClick={onAdd}>
+          <Plus className="h-4 w-4" />
+          Добавить документ
+        </Button>
+      )}
     </div>
   );
 }
