@@ -226,26 +226,8 @@ textarea::placeholder {
     new-dialog-cta-pulse 1.8s ease-in-out infinite;
 }
 
-.closed-dialog-banner {
+.closed-composer-plaque {
   animation: component-enter 460ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-
-.closed-compose {
-  position: relative;
-}
-
-.closed-compose::after {
-  content: "";
-  position: absolute;
-  inset: -4px;
-  z-index: 1;
-  pointer-events: none;
-  border-radius: 24px;
-  background: linear-gradient(
-    180deg,
-    rgba(244, 247, 251, 0.28) 0%,
-    rgba(244, 247, 251, 0.72) 100%
-  );
 }
 
 /* Закрытый тред: спокойный navy/slate, без кораллового угла эскалации. */
@@ -510,7 +492,7 @@ textarea::placeholder {
   .ui-dialog,
   .new-dialog-button,
   .new-dialog-button-cta,
-  .closed-dialog-banner,
+  .closed-composer-plaque,
   .typing-dots span {
     animation: none;
   }

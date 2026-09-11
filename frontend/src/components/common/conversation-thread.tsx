@@ -16,21 +16,27 @@ function enterFromForRole(
   return role === "user" ? "left" : "right";
 }
 
-/** Лента сообщений админки: скелетон при загрузке и влёт пузырей при смене диалога. */
+/** Лента сообщений: скелетон при загрузке и влёт пузырей при смене диалога. */
 export function ConversationThread({
   conversationId,
   messages,
   isLoading,
+  hideConfidence = false,
 }: {
   conversationId: string | null;
   messages: ConversationMessage[] | undefined;
   isLoading: boolean;
+  hideConfidence?: boolean;
 }) {
   return (
     <div className="conversation-thread space-y-4 p-6">
       {isLoading ? <ThreadLoadingSkeleton /> : null}
       {!isLoading && messages ? (
-        <ThreadMessages conversationId={conversationId} messages={messages} />
+        <ThreadMessages
+          conversationId={conversationId}
+          messages={messages}
+          hideConfidence={hideConfidence}
+        />
       ) : null}
     </div>
   );
@@ -39,9 +45,11 @@ export function ConversationThread({
 function ThreadMessages({
   conversationId,
   messages,
+  hideConfidence,
 }: {
   conversationId: string | null;
   messages: ConversationMessage[];
+  hideConfidence: boolean;
 }) {
   // Длина на первом кадре треда: stagger только при входе, не на живых репликах.
   const [initialCount] = useState(messages.length);
@@ -59,6 +67,7 @@ function ThreadMessages({
             message={message}
             enterFrom={enterFromForRole(message.role)}
             enterDelayMs={stagger}
+            hideConfidence={hideConfidence}
           />
         );
       })}

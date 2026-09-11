@@ -10,31 +10,29 @@ import { cn } from "@/src/lib/utils";
 
 const STATUS_META: Record<
   GuestHistoryStatus,
-  { label: string; chipClass: string }
+  { label: string; chipClass: string; iconClass: string }
 > = {
   open: {
     label: "Открыт",
     chipClass: "border-primary/20 bg-primary/10 text-primary shadow-none",
+    iconClass: "bg-primary/10 text-primary",
   },
   escalated: {
     label: "Эскалирован",
-    chipClass: "border-warning/30 bg-warning/10 text-warning shadow-none",
+    chipClass:
+      "border-[#e85646]/25 bg-[#e85646]/10 text-[#c44e3e] shadow-none",
+    iconClass: "bg-[#e85646]/10 text-[#c44e3e]",
   },
   resolved: {
     label: "Закрыт",
     chipClass: "border-secondary/15 bg-secondary/8 text-secondary shadow-none",
+    iconClass: "bg-secondary/10 text-secondary",
   },
 };
 
 function previewText(preview: string): string {
   const trimmed = preview.trim();
-  if (!trimmed) {
-    return "Обращение";
-  }
-  if (trimmed.length <= 80) {
-    return trimmed;
-  }
-  return `${trimmed.slice(0, 79).trimEnd()}…`;
+  return trimmed || "Обращение";
 }
 
 /** Список обращений гостя: только id из localStorage этого браузера. */
@@ -43,16 +41,23 @@ export function GuestHistoryList({
   activeId,
   onSelect,
   onNew,
+  className,
 }: {
   items: GuestHistoryItem[];
   activeId: string | null;
   onSelect: (conversationId: string) => void;
   onNew: () => void;
+  className?: string;
 }) {
   return (
-    <div className="rounded-[24px] bg-white/92 p-5 shadow-[0_10px_24px_rgba(27,51,85,0.05)]">
-      <div className="flex items-start justify-between gap-2">
-        <div>
+    <div
+      className={cn(
+        "flex min-h-0 flex-col rounded-[24px] bg-white/92 p-5 shadow-[0_10px_24px_rgba(27,51,85,0.05)]",
+        className,
+      )}
+    >
+      <div className="flex shrink-0 items-start justify-between gap-2">
+        <div className="min-w-0">
           <p className="text-[11px] uppercase tracking-[0.22em] text-primary">
             Мои обращения
           </p>
@@ -60,7 +65,13 @@ export function GuestHistoryList({
             Только с этого браузера
           </p>
         </div>
-        <Button type="button" variant="outline" size="sm" onClick={onNew}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+          onClick={onNew}
+        >
           <RefreshCw className="h-3.5 w-3.5" />
           Новый
         </Button>
@@ -71,11 +82,19 @@ export function GuestHistoryList({
           не показываем.
         </p>
       ) : (
-        <ScrollArea className="mt-4 max-h-[320px]">
+        <ScrollArea className="mt-4 min-h-0 flex-1 max-h-[min(22rem,50vh)] xl:max-h-none">
           <div className="space-y-2 pr-3">
             {items.map((item) => {
               const isActive = item.id === activeId;
               const status = item.status;
+              const meta = status ? STATUS_META[status] : STATUS_META.open;
+              const Icon =
+                status === "resolved"
+                  ? CircleCheck
+                  : status === "escalated"
+                    ? Headset
+                    : MessageCircle;
+
               return (
                 <button
                   key={item.id}
@@ -83,36 +102,36 @@ export function GuestHistoryList({
                   onClick={() => onSelect(item.id)}
                   aria-current={isActive ? "true" : undefined}
                   className={cn(
-                    "w-full rounded-[18px] border bg-white p-3 text-left transition-colors",
+                    "conversation-list-row w-full overflow-hidden rounded-[18px] border bg-white p-3.5 text-left transition-colors",
                     "border-border hover:border-secondary/25 hover:bg-slate-50/70",
                     isActive &&
                       "border-secondary/40 bg-secondary/[0.04] shadow-[0_8px_20px_rgba(27,51,85,0.08)]",
                   )}
                 >
-                  <div className="flex items-start gap-2.5">
+                  <div className="flex items-start gap-3">
                     <span
-                      className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
+                      className={cn(
+                        "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
+                        meta.iconClass,
+                      )}
                       aria-hidden="true"
                     >
-                      {status === "resolved" ? (
-                        <CircleCheck className="h-4 w-4" />
-                      ) : status === "escalated" ? (
-                        <Headset className="h-4 w-4" />
-                      ) : (
-                        <MessageCircle className="h-4 w-4" />
-                      )}
+                      <Icon className="h-4 w-4" />
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-secondary">
+                      <p className="line-clamp-2 text-sm font-semibold leading-5 text-secondary">
                         {previewText(item.preview)}
                       </p>
-                      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-                        <p className="min-w-0 flex-1 truncate text-xs text-slate-500">
+                      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <p className="min-w-0 text-xs leading-5 text-slate-500">
                           {formatDateTime(item.updatedAt)}
                         </p>
                         {status ? (
-                          <Badge className={cn("shrink-0", STATUS_META[status].chipClass)}>
-                            {STATUS_META[status].label}
+                          <Badge
+                            className={cn("shrink-0 gap-1", meta.chipClass)}
+                          >
+                            <Icon className="h-3 w-3" aria-hidden="true" />
+                            {meta.label}
                           </Badge>
                         ) : null}
                       </div>

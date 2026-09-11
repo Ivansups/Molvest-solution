@@ -1,15 +1,15 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CircleCheck,
   Ellipsis,
   Headset,
   ImagePlus,
+  Lock,
   MessageCircle,
   RefreshCw,
   Send,
@@ -19,7 +19,6 @@ import { ApiStateCard } from "@/src/components/common/api-state-card";
 import { FileDropzone } from "@/src/components/common/file-dropzone";
 import { ConversationThread } from "@/src/components/common/conversation-thread";
 import { GuestHistoryList } from "@/src/components/common/guest-history-list";
-import { MessageBubble } from "@/src/components/common/message-bubble";
 import { OperatorAssistPanel } from "@/src/components/common/operator-assist-panel";
 import { ResolveConfirmationDialog } from "@/src/components/common/resolve-confirmation-dialog";
 import { Badge } from "@/src/components/ui/badge";
@@ -161,17 +160,33 @@ function ConversationListRow({
   );
 }
 
-/** Navy-баннер закрытого гостевого диалога — не серая подсказка в инпуте. */
-function ClosedDialogBanner({ description }: { description: string }) {
+/**
+ * Закрытый тред = открытый circuit: поле ввода не монтируем.
+ * Вместо него — маленькая табличка (graceful degradation), не баннер-тревога.
+ */
+function ClosedComposerPlaque({
+  description,
+  action,
+}: {
+  description: string;
+  action?: ReactNode;
+}) {
   return (
     <div
-      className="closed-dialog-banner rounded-[24px] border border-secondary/12 bg-secondary p-5 text-white"
+      className="closed-composer-plaque flex flex-wrap items-center gap-3 rounded-[22px] border border-secondary/15 bg-slate-50/90 px-3.5 py-2.5"
       role="status"
     >
-      <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">
-        Диалог закрыт
-      </p>
-      <p className="mt-3 text-sm leading-6 text-white/80">{description}</p>
+      <span
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary/10 text-secondary"
+        aria-hidden="true"
+      >
+        <Lock className="h-3.5 w-3.5" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-secondary">Диалог закрыт</p>
+        <p className="text-xs leading-5 text-slate-500">{description}</p>
+      </div>
+      {action}
     </div>
   );
 }
@@ -554,9 +569,9 @@ export function ChatPage({
     return (
       <>
         <Card className="shell-panel reveal-item reveal-delay-4 overflow-hidden rounded-[30px]">
-          <CardContent className="grid gap-0 p-0 xl:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="flex h-[640px] flex-col">
-              <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border/60 px-6 py-5">
+          <CardContent className="grid gap-0 p-0 xl:grid-cols-[minmax(0,1fr)_minmax(260px,320px)]">
+            <div className="flex h-[640px] min-h-0 flex-col">
+              <div className="flex shrink-0 flex-wrap items-start justify-between gap-4 border-b border-border/60 px-6 py-5">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.2em] text-primary">
                     Гостевой канал
@@ -587,37 +602,38 @@ export function ChatPage({
                   Новый диалог
                 </Button>
               </div>
-              <ScrollArea className="flex-1">
-                <div className="space-y-4 p-6">
-                  {Boolean(guestConversationId) &&
-                  conversationQuery.isLoading &&
-                  guestVisibleMessages.length === 0 ? (
-                    <div className="flex items-center gap-3 rounded-2xl border border-primary/15 bg-primary/5 p-4 text-sm text-secondary">
-                      <Spinner className="h-5 w-5 shrink-0" />
-                      <span>Загрузка обращения…</span>
-                    </div>
-                  ) : null}
-                  {guestVisibleMessages.length === 0 &&
-                  !(guestConversationId && conversationQuery.isLoading) ? (
+              <ScrollArea className="min-h-0 flex-1">
+                {guestVisibleMessages.length === 0 &&
+                !(
+                  Boolean(guestConversationId) && conversationQuery.isLoading
+                ) ? (
+                  <div className="p-6">
                     <div className="rounded-[26px] border border-dashed border-border bg-slate-50/80 p-6">
                       <p className="text-base font-medium text-secondary">
-                        Опишите проблему, код ошибки, форму 1С или приложите скриншот.
+                        Опишите проблему, код ошибки, форму 1С или приложите
+                        скриншот.
                       </p>
                       <p className="mt-2 text-sm leading-6 text-slate-500">
-                        Чем точнее контекст обращения, тем релевантнее подбор источников
-                        и итоговый ответ.
+                        Чем точнее контекст обращения, тем релевантнее подбор
+                        источников и итоговый ответ.
                       </p>
                     </div>
-                  ) : null}
-                  {guestVisibleMessages.map((message, index) => (
-                    <MessageBubble
-                      key={message.id}
-                      message={message}
-                      animate={index === guestVisibleMessages.length - 1}
-                      hideConfidence
-                    />
-                  ))}
-                  {guestSendPending ? (
+                  </div>
+                ) : (
+                  <ConversationThread
+                    key={`${guestConversationId ?? "new"}-${guestSessionEpoch}`}
+                    conversationId={guestConversationId}
+                    messages={guestVisibleMessages}
+                    isLoading={
+                      Boolean(guestConversationId) &&
+                      conversationQuery.isLoading &&
+                      guestVisibleMessages.length === 0
+                    }
+                    hideConfidence
+                  />
+                )}
+                {guestSendPending ? (
+                  <div className="px-6 pb-6">
                     <div className="flex items-center gap-3 rounded-2xl border border-primary/15 bg-primary/5 p-4 text-sm text-secondary">
                       <Spinner className="h-5 w-5 shrink-0" />
                       <span>
@@ -631,112 +647,103 @@ export function ChatPage({
                         <span />
                       </span>
                     </div>
-                  ) : null}
-                </div>
-              </ScrollArea>
-              <Separator />
-              <div className="space-y-4 p-6">
-                {guestClosed ? (
-                  <ClosedDialogBanner
-                    description="Нажмите «Новый диалог», чтобы начать обращение заново."
-                  />
-                ) : null}
-                <div
-                  className={cn("space-y-4", guestClosed && "closed-compose")}
-                  aria-disabled={guestClosed}
-                >
-                  {pendingImage ? (
-                    <div className="rounded-xl border border-border bg-slate-50 p-3">
-                      <p className="text-sm font-medium text-secondary">{pendingImage.name}</p>
-                      <Image
-                        src={pendingImage.previewUrl}
-                        alt={pendingImage.name}
-                        width={640}
-                        height={360}
-                        unoptimized
-                        className="mt-3 max-h-40 rounded-2xl border border-border"
-                      />
-                    </div>
-                  ) : null}
-                  <Textarea
-                    rows={5}
-                    placeholder={
-                      guestClosed
-                        ? "Диалог закрыт — начните новый"
-                        : "Опишите ошибку, код 1С или приложите скриншот"
-                    }
-                    value={draft}
-                    onChange={(event) => setDraft(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key !== "Enter" || event.shiftKey) {
-                        return;
-                      }
-                      event.preventDefault();
-                      if (!guestSendPending && !guestClosed) {
-                        sendMutation.mutate();
-                      }
-                    }}
-                    disabled={guestClosed}
-                  />
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => setImageDialogOpen(true)}
-                        disabled={guestClosed}
-                      >
-                        <ImagePlus className="h-4 w-4" />
-                        Прикрепить скриншот
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => sendMutation.mutate({ forceHandoff: true })}
-                        disabled={guestSendPending || guestClosed || guestEscalated}
-                      >
-                        <Headset className="h-4 w-4" />
-                        Позвать оператора
-                      </Button>
-                    </div>
-                    <Button
-                      type="button"
-                      onClick={() => sendMutation.mutate()}
-                      disabled={guestSendPending || guestClosed}
-                    >
-                      <Send className="h-4 w-4" />
-                      Отправить вопрос
-                    </Button>
                   </div>
-                </div>
+                ) : null}
+              </ScrollArea>
+              <Separator className="shrink-0" />
+              <div className="shrink-0 p-6">
+                {guestClosed ? (
+                  <ClosedComposerPlaque
+                    description="Нажмите «Новый диалог», чтобы начать обращение заново."
+                    action={
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0"
+                        onClick={handleNewGuestConversation}
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        Новый диалог
+                      </Button>
+                    }
+                  />
+                ) : (
+                  <div className="space-y-4">
+                    {pendingImage ? (
+                      <div className="rounded-xl border border-border bg-slate-50 p-3">
+                        <p className="text-sm font-medium text-secondary">
+                          {pendingImage.name}
+                        </p>
+                        <Image
+                          src={pendingImage.previewUrl}
+                          alt={pendingImage.name}
+                          width={640}
+                          height={360}
+                          unoptimized
+                          className="mt-3 max-h-40 rounded-2xl border border-border"
+                        />
+                      </div>
+                    ) : null}
+                    <Textarea
+                      rows={5}
+                      placeholder="Опишите ошибку, код 1С или приложите скриншот"
+                      value={draft}
+                      onChange={(event) => setDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter" || event.shiftKey) {
+                          return;
+                        }
+                        event.preventDefault();
+                        if (!guestSendPending) {
+                          sendMutation.mutate();
+                        }
+                      }}
+                    />
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setImageDialogOpen(true)}
+                        >
+                          <ImagePlus className="h-4 w-4" />
+                          Прикрепить скриншот
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() =>
+                            sendMutation.mutate({ forceHandoff: true })
+                          }
+                          disabled={guestSendPending || guestEscalated}
+                        >
+                          <Headset className="h-4 w-4" />
+                          Позвать оператора
+                        </Button>
+                      </div>
+                      <Button
+                        type="button"
+                        onClick={() => sendMutation.mutate()}
+                        disabled={guestSendPending}
+                      >
+                        <Send className="h-4 w-4" />
+                        Отправить вопрос
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
-            <div className="border-t border-border/60 bg-slate-50/70 p-6 xl:border-l xl:border-t-0">
-              <div className="space-y-4">
-                <GuestHistoryList
-                  items={guestHistory}
-                  activeId={guestConversationId}
-                  onSelect={handleOpenGuestConversation}
-                  onNew={handleNewGuestConversation}
-                />
-                <div className="rounded-[24px] border border-secondary/12 bg-secondary p-5 text-white">
-                  <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">
-                    Закрытая панель
-                  </p>
-                  <p className="mt-3 text-sm leading-6 text-white/76">
-                    Сотрудники поддержки работают отдельно: документы, эскалации и
-                    операторский поток доступны только после авторизации.
-                  </p>
-                  <Button
-                    variant="outline"
-                    className="mt-4 w-full border-white/16 !bg-white !text-secondary hover:!bg-white/92"
-                    asChild
-                  >
-                    <Link href="/login">Открыть вход для поддержки</Link>
-                  </Button>
-                </div>
-              </div>
-            </div>
+            <aside className="flex min-h-0 flex-col border-t border-border/60 bg-slate-50/70 p-5 xl:h-[640px] xl:border-l xl:border-t-0">
+              <GuestHistoryList
+                className="min-h-0 flex-1"
+                items={guestHistory}
+                activeId={guestConversationId}
+                onSelect={handleOpenGuestConversation}
+                onNew={handleNewGuestConversation}
+              />
+            </aside>
           </CardContent>
         </Card>
         <Dialog open={imageDialogOpen} onOpenChange={setImageDialogOpen}>
@@ -908,68 +915,50 @@ export function ChatPage({
               />
             </ScrollArea>
             <Separator />
-            <div className="space-y-4 p-6">
+            <div className="p-6">
               {conversation?.status === "resolved" ? (
-                <div
-                  className="rounded-[22px] border border-secondary/10 bg-slate-50/90 p-4"
-                  role="status"
-                >
-                  <p className="text-sm font-semibold text-secondary">Диалог закрыт</p>
-                  <p className="mt-1 text-sm leading-6 text-slate-500">
-                    Отправка в эту ветку недоступна.
-                  </p>
+                <ClosedComposerPlaque description="Отправка в эту ветку недоступна." />
+              ) : (
+                <div className="space-y-4">
+                  <Textarea
+                    rows={4}
+                    placeholder="Введите сообщение пользователю"
+                    value={draft}
+                    onChange={(event) => setDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" || event.shiftKey) {
+                        return;
+                      }
+                      event.preventDefault();
+                      const canSend =
+                        !sendMutation.isPending &&
+                        conversation?.status === "escalated" &&
+                        Boolean(
+                          draft.trim() || conversation?.suggestedResponse.trim(),
+                        );
+                      if (canSend) {
+                        sendMutation.mutate();
+                      }
+                    }}
+                    disabled={conversation?.status !== "escalated"}
+                  />
+                  <div className="flex justify-end">
+                    <Button
+                      onClick={() => sendMutation.mutate()}
+                      disabled={
+                        sendMutation.isPending ||
+                        conversation?.status !== "escalated" ||
+                        !(
+                          draft.trim() || conversation?.suggestedResponse.trim()
+                        )
+                      }
+                    >
+                      <Send className="h-4 w-4" />
+                      Отправить
+                    </Button>
+                  </div>
                 </div>
-              ) : null}
-              <div
-                className={cn(
-                  "space-y-4",
-                  conversation?.status === "resolved" && "closed-compose",
-                )}
-                aria-disabled={conversation?.status === "resolved"}
-              >
-                <Textarea
-                  rows={4}
-                  placeholder={
-                    conversation?.status === "resolved"
-                      ? "Диалог закрыт"
-                      : "Введите сообщение пользователю"
-                  }
-                  value={draft}
-                  onChange={(event) => setDraft(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key !== "Enter" || event.shiftKey) {
-                      return;
-                    }
-                    event.preventDefault();
-                    const canSend =
-                      !sendMutation.isPending &&
-                      conversation?.status === "escalated" &&
-                      Boolean(
-                        draft.trim() || conversation?.suggestedResponse.trim(),
-                      );
-                    if (canSend) {
-                      sendMutation.mutate();
-                    }
-                  }}
-                  disabled={conversation?.status !== "escalated"}
-                />
-                <div className="flex justify-end">
-                  <Button
-                    onClick={() => sendMutation.mutate()}
-                    disabled={
-                      sendMutation.isPending ||
-                      conversation?.status !== "escalated" ||
-                      !(
-                        draft.trim() ||
-                        conversation?.suggestedResponse.trim()
-                      )
-                    }
-                  >
-                    <Send className="h-4 w-4" />
-                    Отправить
-                  </Button>
-                </div>
-              </div>
+              )}
             </div>
           </CardContent>
         </Card>
