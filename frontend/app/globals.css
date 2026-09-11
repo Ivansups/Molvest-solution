@@ -208,6 +208,79 @@ textarea::placeholder {
     new-dialog-pulse 2.8s ease-in-out 1.2s 2;
 }
 
+@keyframes new-dialog-cta-pulse {
+  0%,
+  100% {
+    box-shadow: 0 10px 24px rgba(0, 166, 80, 0.18);
+  }
+
+  50% {
+    box-shadow: 0 14px 32px rgba(0, 166, 80, 0.42);
+  }
+}
+
+/* Закрытый диалог: зелёный CTA «Новый диалог» должен быть очевидным. */
+.new-dialog-button-cta {
+  animation:
+    component-enter 460ms cubic-bezier(0.2, 0.8, 0.2, 1) both,
+    new-dialog-cta-pulse 1.8s ease-in-out infinite;
+}
+
+.closed-dialog-banner {
+  animation: component-enter 460ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.closed-compose {
+  position: relative;
+}
+
+.closed-compose::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: 24px;
+  background: linear-gradient(
+    180deg,
+    rgba(244, 247, 251, 0.28) 0%,
+    rgba(244, 247, 251, 0.72) 100%
+  );
+}
+
+/* Закрытый тред: спокойный navy/slate, без кораллового угла эскалации. */
+.resolved-thread {
+  position: relative;
+  isolation: isolate;
+  box-shadow:
+    inset 0 0 0 1px rgba(26, 59, 107, 0.1),
+    0 8px 20px rgba(27, 51, 85, 0.04);
+}
+
+.resolved-thread::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(
+    180deg,
+    rgba(26, 59, 107, 0.045) 0%,
+    rgba(26, 59, 107, 0.09) 100%
+  );
+}
+
+.resolved-thread > * {
+  position: relative;
+  z-index: 1;
+}
+
+.resolved-thread-active {
+  border-color: rgba(26, 59, 107, 0.22);
+  color: var(--secondary);
+}
+
 .new-dialog-button svg {
   transition: transform 220ms ease;
 }
@@ -255,6 +328,180 @@ textarea::placeholder {
   }
 }
 
+@keyframes thread-enter-left {
+  from {
+    opacity: 0;
+    transform: translateX(-18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes thread-enter-right {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes thread-enter-fade {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes thread-skeleton-pulse {
+  0%,
+  100% {
+    opacity: 0.42;
+  }
+
+  50% {
+    opacity: 0.88;
+  }
+}
+
+.thread-enter-left,
+.thread-enter-right {
+  animation-duration: 280ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  animation-fill-mode: both;
+}
+
+.thread-enter-left {
+  animation-name: thread-enter-left;
+}
+
+.thread-enter-right {
+  animation-name: thread-enter-right;
+}
+
+.thread-skeleton-bar {
+  animation: thread-skeleton-pulse 1.15s ease-in-out infinite;
+}
+
+/* Фильтр очереди: один сегмент-трей, выбранный — Sber green. */
+.status-filter-tray {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px;
+  height: auto;
+  width: 100%;
+  padding: 4px;
+  border-radius: 16px;
+  background: rgba(26, 59, 107, 0.08);
+}
+
+.status-filter-item {
+  height: 2.15rem;
+  border-radius: 12px;
+  padding-inline: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--secondary);
+  box-shadow: none;
+}
+
+.status-filter-item[data-state="active"] {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow: 0 6px 14px rgba(0, 166, 80, 0.28);
+}
+
+/* Строка очереди: белый каркас; контент над коралловым wash. */
+.conversation-list-row {
+  box-shadow: 0 8px 18px rgba(27, 51, 85, 0.045);
+}
+
+.conversation-list-row > *,
+.escalation-corner > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Эскалация: тёплый коралловый уголок, без красной заливки экрана. */
+.escalation-corner {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  box-shadow:
+    inset -1px 1px 0 rgba(196, 78, 62, 0.28),
+    0 10px 28px rgba(27, 51, 85, 0.07);
+}
+
+.escalation-corner::before {
+  content: "";
+  position: absolute;
+  top: -22%;
+  right: -16%;
+  z-index: 0;
+  width: 11.5rem;
+  height: 8.75rem;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at 58% 38%,
+    rgba(232, 86, 70, 0.28) 0%,
+    rgba(255, 142, 118, 0.14) 42%,
+    transparent 72%
+  );
+  animation: escalation-ember 5.8s ease-in-out infinite;
+}
+
+.escalation-corner::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(
+    135deg,
+    transparent 58%,
+    rgba(220, 82, 66, 0.1) 100%
+  );
+}
+
+.escalation-corner.escalation-corner-active {
+  box-shadow:
+    inset -1px 1px 0 rgba(255, 156, 132, 0.42),
+    0 12px 30px rgba(27, 51, 85, 0.14);
+}
+
+.escalation-corner.escalation-corner-active::before {
+  background: radial-gradient(
+    ellipse at 58% 38%,
+    rgba(255, 128, 108, 0.46) 0%,
+    rgba(255, 168, 140, 0.18) 40%,
+    transparent 72%
+  );
+}
+
+@keyframes escalation-ember {
+  0%,
+  100% {
+    opacity: 0.74;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .reveal-item,
   .ui-surface,
@@ -262,11 +509,32 @@ textarea::placeholder {
   .ui-table,
   .ui-dialog,
   .new-dialog-button,
+  .new-dialog-button-cta,
+  .closed-dialog-banner,
   .typing-dots span {
     animation: none;
   }
 
   .new-dialog-button svg {
     transition: none;
+  }
+
+  .thread-enter-left,
+  .thread-enter-right {
+    animation-name: thread-enter-fade;
+    animation-duration: 160ms;
+    animation-delay: 0ms !important;
+    transform: none;
+  }
+
+  .thread-skeleton-bar {
+    animation: none;
+    opacity: 0.55;
+  }
+
+  .escalation-corner::before {
+    animation: none;
+    opacity: 0.9;
+    transform: none;
   }
 }

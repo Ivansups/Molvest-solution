@@ -4,7 +4,6 @@ import {
   BarChart3,
   Database,
   LayoutDashboard,
-  LifeBuoy,
   MessageSquare,
   Settings,
 } from "lucide-react";
@@ -32,7 +31,6 @@ const navigation: Array<{
   { to: "/knowledge-base", label: "База знаний", icon: Database, roles: ["admin", "operator"] },
   { to: "/analytics", label: "Аналитика", icon: BarChart3, roles: ["admin", "operator"] },
   { to: "/settings", label: "Настройки", icon: Settings, roles: ["admin", "operator"] },
-  { to: "/operator", label: "Операторская", icon: LifeBuoy, roles: ["operator"] },
 ];
 
 export function AppSidebar({ role }: { role: AppRole }) {
