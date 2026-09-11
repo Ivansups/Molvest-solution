@@ -113,9 +113,10 @@ class GigaChatService:
 
     async def chat_with_vision(self, image_base64: str, prompt: str) -> str:
         """Описывает скриншот через Vision. На вход — сырая base64-строка."""
+        model = self._settings.gigachat_vision_model
         logger.info(
             "GigaChat vision model=%s image_chars=%s prompt_chars=%s",
-            self._settings.gigachat_model,
+            model,
             len(image_base64),
             len(prompt),
         )
@@ -127,12 +128,13 @@ class GigaChatService:
         )
         image_part = ChatContentPart(files=[ChatContentFile(id=uploaded.id_)])
         request = ChatCompletionRequest(
+            model=model,
             messages=[
                 ChatMessage(
                     role="user",
                     content=[ChatContentPart(text=prompt), image_part],
                 )
-            ]
+            ],
         )
         response = await self._client.achat.create(request)
         text = _extract_text(response)

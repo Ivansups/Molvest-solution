@@ -100,6 +100,7 @@ async def test_chat_with_vision_uploads_file_and_references_it() -> None:
     assert content == base64.b64decode(_PNG_BASE64)
     assert mime == "image/png"
     request = client.achat.create.await_args.args[0]
+    assert request.model == "GigaChat-2-Pro"
     image_part = request.messages[0].content[1]
     assert image_part.files[0].id_ == "file-123"
 
