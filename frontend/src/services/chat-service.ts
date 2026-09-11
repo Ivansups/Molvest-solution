@@ -48,6 +48,8 @@ function toDetail(conversation: ConversationDetailOut): ConversationDetail {
     priority: "medium",
     unread: 0,
     suggestedResponse: conversation.suggested_response ?? "",
+    resolveComment: conversation.resolve_comment ?? null,
+    resolveConfirmedAt: conversation.resolve_confirmed_at ?? null,
     userProfile: { company: "", department: "", position: "", lastSeenAt: "" },
     messages: conversation.messages.map(toMessage),
   };
@@ -148,10 +150,13 @@ export const chatService = {
   async resolveConversation(
     conversationId: string,
     installationId: string,
+    comment?: string,
   ): Promise<void> {
     try {
       await apiClient.post(`/api/conversations/${conversationId}/resolve`, {
         installation_id: installationId,
+        confirmed: true,
+        ...(comment ? { comment } : {}),
       });
     } catch (error) {
       throw toServiceError(

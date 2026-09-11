@@ -17,6 +17,10 @@ from app.models.message import Message
 from app.rag.retrieval import workspace_to_installation_id
 from app.schemas.chat import ChatRequest
 from app.services.agent import ConversationConflictError, run_chat_turn
+from app.services.channel_handoff import (
+    escalate_if_agent_still_open,
+    should_draft_followup,
+)
 from app.services.conversations import add_user_message
 from app.services.draft import generate_draft
 from app.services.runtime_settings import get_effective_operator_assist_mode
@@ -47,9 +51,23 @@ async def process_live_thread_event(
     if event.sender == "operator":
         return await _process_operator(session, event, installation_id)
 
-    if get_effective_operator_assist_mode() == "draft":
+    mode = get_effective_operator_assist_mode()
+    if mode == "draft":
         return await _process_draft(session, event, installation_id)
-
+    if mode == "agent":
+        mapping = await _find_mapping(
+            session,
+            installation_id=installation_id,
+            thread_id=event.thread_id,
+        )
+        if mapping is not None:
+            conversation = await session.get(Conversation, mapping.conversation_id)
+            if conversation is not None and await should_draft_followup(
+                session, conversation
+            ):
+                return await _process_draft(
+                    session, event, installation_id, conversation=conversation
+                )
     return await _process_auto(session, event, installation_id)
 
 
@@ -96,14 +114,17 @@ async def _process_draft(
     session: AsyncSession,
     event: BitrixWebhookEvent,
     installation_id: UUID,
+    *,
+    conversation: Conversation | None = None,
 ) -> BitrixWebhookResponse:
     """Черновик оператору: retrieve + generate, ответ пользователю не уходит."""
-    conversation = await _get_or_create_thread(
-        session,
-        installation_id=installation_id,
-        thread_id=event.thread_id,
-        user_id=event.user_id or _DEFAULT_USER,
-    )
+    if conversation is None:
+        conversation = await _get_or_create_thread(
+            session,
+            installation_id=installation_id,
+            thread_id=event.thread_id,
+            user_id=event.user_id or _DEFAULT_USER,
+        )
     session.add(
         add_user_message(
             conversation,
@@ -113,6 +134,7 @@ async def _process_draft(
             channel_message_id=event.message_id,
         )
     )
+    await escalate_if_agent_still_open(session, conversation)
     await session.commit()
 
     draft = None

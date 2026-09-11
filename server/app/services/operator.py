@@ -24,6 +24,10 @@ class ConversationNotFoundError(Exception):
     """Диалог не найден в этой установке."""
 
 
+class ResolveNotConfirmedError(Exception):
+    """Закрытие без confirmed=true: статус не меняем."""
+
+
 async def add_operator_reply(
     session: AsyncSession,
     *,
@@ -61,14 +65,18 @@ async def resolve_conversation(
     *,
     conversation_id: UUID,
     installation_id: UUID,
+    confirmed: bool,
+    comment: str | None = None,
 ) -> Conversation:
-    """escalated → resolved, идемпотентно на уже resolved."""
+    """escalated → resolved после confirmed=true; идемпотентно на уже resolved."""
     conversation = await _require_conversation(
         session, conversation_id, installation_id
     )
     if conversation.status == ConversationStatus.RESOLVED:
         logger.info("resolve повтор conversation_id=%s", conversation.id)
         return conversation
+    if not confirmed:
+        raise ResolveNotConfirmedError
     try:
         transition_status(conversation, ConversationStatus.RESOLVED)
     except IllegalStatusTransitionError as exc:
@@ -78,6 +86,8 @@ async def resolve_conversation(
         if escalation.resolved_at is None:
             escalation.resolved_at = now
     conversation.suggested_response = None
+    conversation.resolve_comment = _normalize_resolve_comment(comment)
+    conversation.resolve_confirmed_at = now
     await session.commit()
     await session.refresh(conversation)
     logger.info("тикет закрыт conversation_id=%s", conversation.id)
@@ -123,6 +133,14 @@ async def _require_conversation(
     if conversation is None:
         raise ConversationNotFoundError
     return conversation
+
+
+def _normalize_resolve_comment(comment: str | None) -> str | None:
+    """Пустой комментарий храним как NULL, не как пустую строку."""
+    if comment is None:
+        return None
+    stripped = comment.strip()
+    return stripped or None
 
 
 def _last_user_message(conversation: Conversation) -> Message | None:

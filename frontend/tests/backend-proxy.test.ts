@@ -55,13 +55,24 @@ describe("backend proxy", () => {
     expect(upstream).not.toHaveBeenCalled();
   });
 
-  it("allowsAnonymousGuestConversationPollWithoutDraft", async () => {
+    it("allowsAnonymousGuestConversationPollWithoutDraft", async () => {
     upstream.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
           id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
           suggested_response: "секретный черновик",
-          messages: [],
+          resolve_comment: "закрыли",
+          resolve_confirmed_at: "2026-09-11T06:39:13.523044+00:00",
+          escalations: [{ id: "esc-1", reason: "внутренняя причина" }],
+          messages: [
+            {
+              id: "msg-1",
+              role: "system",
+              content: "Вопрос передан оператору техподдержки.",
+              confidence: 0.91,
+              escalated: true,
+            },
+          ],
         }),
         { status: 200, headers: { "content-type": "application/json" } },
       ),
@@ -76,18 +87,30 @@ describe("backend proxy", () => {
 
     expect(response.status).toBe(200);
     expect(upstream).toHaveBeenCalledOnce();
-    const body = (await response.json()) as { suggested_response?: string };
+    const body = (await response.json()) as {
+      suggested_response?: string;
+      resolve_comment?: string;
+      resolve_confirmed_at?: string;
+      escalations?: unknown;
+      messages?: Array<{ confidence?: number }>;
+    };
     expect(body.suggested_response).toBeUndefined();
+    expect(body.resolve_comment).toBeUndefined();
+    expect(body.resolve_confirmed_at).toBeUndefined();
+    expect(body.escalations).toBeUndefined();
+    expect(body.messages?.[0]?.confidence).toBeUndefined();
   });
 
-  it("keepsDraftForStaffConversationPoll", async () => {
+    it("keepsDraftForStaffConversationPoll", async () => {
     getSession.mockResolvedValue({ user: { id: "op-1" } });
     upstream.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
           id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
           suggested_response: "черновик оператора",
-          messages: [],
+          resolve_comment: "закрыли",
+          escalations: [{ id: "esc-1", reason: "внутренняя причина" }],
+          messages: [{ id: "msg-1", confidence: 0.91 }],
         }),
         { status: 200, headers: { "content-type": "application/json" } },
       ),
@@ -101,8 +124,16 @@ describe("backend proxy", () => {
     );
 
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { suggested_response?: string };
+    const body = (await response.json()) as {
+      suggested_response?: string;
+      resolve_comment?: string;
+      escalations?: Array<{ reason?: string }>;
+      messages?: Array<{ confidence?: number }>;
+    };
     expect(body.suggested_response).toBe("черновик оператора");
+    expect(body.resolve_comment).toBe("закрыли");
+    expect(body.escalations?.[0]?.reason).toBe("внутренняя причина");
+    expect(body.messages?.[0]?.confidence).toBe(0.91);
   });
 
   it("allowsAnonymousGuestChat", async () => {

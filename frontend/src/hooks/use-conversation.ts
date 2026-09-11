@@ -1,29 +1,29 @@
 "use client";
 
 import { useState } from "react";
+import {
+  clearGuestConversationId,
+  readGuestConversationId,
+  writeGuestConversationId,
+} from "@/src/lib/guest-session";
 
-const GUEST_CONVERSATION_KEY = "guest_conversation_id";
-
-/** Сохраняет идентификатор гостевого диалога до закрытия вкладки браузера. */
+/** Сохраняет id гостевого диалога в sessionStorage и localStorage. */
 export function useConversation(): {
   conversationId: string | null;
   setConversationId: (conversationId: string) => void;
   resetConversation: () => void;
 } {
   const [conversationId, setConversationIdState] = useState<string | null>(
-    () =>
-      typeof window === "undefined"
-        ? null
-        : window.sessionStorage.getItem(GUEST_CONVERSATION_KEY),
+    () => readGuestConversationId(),
   );
 
   const setConversationId = (nextConversationId: string): void => {
-    window.sessionStorage.setItem(GUEST_CONVERSATION_KEY, nextConversationId);
+    writeGuestConversationId(nextConversationId);
     setConversationIdState(nextConversationId);
   };
 
   const resetConversation = (): void => {
-    window.sessionStorage.removeItem(GUEST_CONVERSATION_KEY);
+    clearGuestConversationId();
     setConversationIdState(null);
   };
 

@@ -16,6 +16,8 @@ const detail = {
   status: "escalated" as const,
   created_at: "2026-01-01T00:00:00.000Z",
   suggested_response: "черновик",
+  resolve_comment: null,
+  resolve_confirmed_at: null,
   messages: [],
   escalations: [],
 };
@@ -36,6 +38,47 @@ describe("chatService operator actions", () => {
       "/api/conversations/c1/resolve",
       "/api/conversations/c1/suggest",
     ]);
+    expect(post.mock.calls[1]?.[1]).toEqual({
+      installation_id: "i1",
+      confirmed: true,
+    });
+  });
+
+  it("sends an optional resolve comment with confirmed=true", async () => {
+    post.mockResolvedValue({ data: detail });
+    await chatService.resolveConversation("c1", "i1", "готово");
+    expect(post).toHaveBeenCalledWith("/api/conversations/c1/resolve", {
+      installation_id: "i1",
+      confirmed: true,
+      comment: "готово",
+    });
+  });
+
+  it("posts force_handoff on guest chat when requested", async () => {
+    post.mockResolvedValue({
+      data: {
+        conversation_id: "c1",
+        message_id: "m1",
+        text: "Передаю оператору",
+        confidence: 0,
+        escalated: true,
+        sources: [],
+      },
+    });
+    await chatService.sendMessage({
+      message_id: "m1",
+      workspace_id: "i1",
+      conversation_id: null,
+      text: "Позовите оператора",
+      image_base64: null,
+      user_id: "guest",
+      force_handoff: true,
+    });
+    expect(post).toHaveBeenCalledWith(
+      "/chat",
+      expect.objectContaining({ force_handoff: true }),
+      expect.objectContaining({ timeout: 60_000 }),
+    );
   });
 
   it("lists only escalated conversations when status is passed", async () => {

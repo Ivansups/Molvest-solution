@@ -44,7 +44,29 @@ function isGuestConversationPoll(method: string, path: string[]): boolean {
   );
 }
 
-async function stripSuggestedResponse(upstream: Response): Promise<Response> {
+/** Черновик, комментарий закрытия и внутренние поля эскалации — не гостевому poll. */
+const GUEST_HIDDEN_FIELDS = [
+  "suggested_response",
+  "resolve_comment",
+  "resolve_confirmed_at",
+  "escalations",
+] as const;
+
+function stripGuestMessageFields(messages: unknown): unknown {
+  if (!Array.isArray(messages)) {
+    return messages;
+  }
+  return messages.map((item) => {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) {
+      return item;
+    }
+    const message = { ...(item as Record<string, unknown>) };
+    delete message.confidence;
+    return message;
+  });
+}
+
+async function stripOperatorOnlyFields(upstream: Response): Promise<Response> {
   const headers = copyHopSafe(upstream.headers);
   headers.delete("content-length");
   const contentType = upstream.headers.get("content-type") ?? "";
@@ -58,7 +80,10 @@ async function stripSuggestedResponse(upstream: Response): Promise<Response> {
   const payload: unknown = await upstream.json();
   if (payload !== null && typeof payload === "object" && !Array.isArray(payload)) {
     const body = { ...(payload as Record<string, unknown>) };
-    delete body.suggested_response;
+    for (const field of GUEST_HIDDEN_FIELDS) {
+      delete body[field];
+    }
+    body.messages = stripGuestMessageFields(body.messages);
     return Response.json(body, {
       status: upstream.status,
       statusText: upstream.statusText,
@@ -107,7 +132,7 @@ async function proxy(
   });
 
   if (guestPoll && !session) {
-    return stripSuggestedResponse(upstream);
+    return stripOperatorOnlyFields(upstream);
   }
 
   return new Response(upstream.body, {

@@ -112,7 +112,7 @@ def add_assistant_message(
     return message
 
 
-def escalate_conversation(
+async def escalate_conversation(
     session: AsyncSession,
     conversation: Conversation,
     *,
@@ -122,17 +122,21 @@ def escalate_conversation(
     """Переводит open → escalated через сервис и создаёт строку Escalation.
 
     Идемпотентно: если диалог уже escalated, вторую строку не создаём и
-    статус не меняем. Вызов до flush, чтобы у message был id.
+    статус не меняем. SELECT FOR UPDATE на строке диалога, чтобы два
+    параллельных первых хода не вставили две Escalation.
     """
-    if conversation.status == ConversationStatus.OPEN:
-        transition_status(conversation, ConversationStatus.ESCALATED)
-        escalation = Escalation(
-            conversation=conversation,
-            message=assistant_message,
-            reason=reason,
-            escalated_to=_ESCALATED_TO,
-        )
-        session.add(escalation)
+    await session.flush()
+    await session.refresh(conversation, with_for_update=True)
+    if conversation.status != ConversationStatus.OPEN:
+        return
+    transition_status(conversation, ConversationStatus.ESCALATED)
+    escalation = Escalation(
+        conversation=conversation,
+        message=assistant_message,
+        reason=reason,
+        escalated_to=_ESCALATED_TO,
+    )
+    session.add(escalation)
 
 
 async def persist_guest_hold(
@@ -177,6 +181,7 @@ async def persist_turn(
     escalated: bool,
     sources: list[Source],
     escalation_reason: str | None = None,
+    suggested_response: str | None = None,
     user_created_at: datetime | None = None,
     channel: str | None = None,
     channel_message_id: str | None = None,
@@ -209,12 +214,14 @@ async def persist_turn(
     session.add(assistant)
     if escalated:
         reason = escalation_reason or f"Низкая уверенность ретривала: {confidence:.2f}"
-        escalate_conversation(
+        await escalate_conversation(
             session,
             conversation,
             assistant_message=assistant,
             reason=reason,
         )
+    if suggested_response is not None:
+        conversation.suggested_response = suggested_response
     await session.commit()
     logger.info(
         "ход записан conversation_id=%s escalated=%s",

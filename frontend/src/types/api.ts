@@ -19,6 +19,7 @@ export interface ChatRequest {
   text: string | null;
   image_base64: string | null;
   user_id: string;
+  force_handoff?: boolean;
 }
 
 export interface ChatResponse {
@@ -93,6 +94,8 @@ export interface ConversationDetailOut {
   status: ConversationStatus;
   created_at: string;
   suggested_response: string | null;
+  resolve_comment: string | null;
+  resolve_confirmed_at: string | null;
   messages: MessageOut[];
   escalations: EscalationOut[];
 }
@@ -110,8 +113,10 @@ export interface ConversationMetrics {
   escalation_count: number;
 }
 
+export type OperatorAssistMode = "draft" | "auto" | "agent";
+
 export interface AgentSettings {
   confidence_threshold: number;
-  operator_assist_mode: "draft" | "auto";
+  operator_assist_mode: OperatorAssistMode;
 }
 

@@ -146,6 +146,9 @@ def get_graph() -> CompiledStateGraph[AgentState, None]:
 def _after_classify(
     state: AgentState,
 ) -> Literal["handoff_detect", "__end__"]:
+    if state.get("force_handoff"):
+        logger.info("после classify force_handoff → handoff_detect")
+        return "handoff_detect"
     intent = state.get("intent", "support")
     nxt: Literal["handoff_detect", "__end__"] = (
         "__end__" if intent == "empty" else "handoff_detect"

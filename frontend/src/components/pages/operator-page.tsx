@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiStateCard } from "@/src/components/common/api-state-card";
 import { MessageBubble } from "@/src/components/common/message-bubble";
 import { OperatorAssistPanel } from "@/src/components/common/operator-assist-panel";
+import { ResolveConfirmationDialog } from "@/src/components/common/resolve-confirmation-dialog";
 import { Badge } from "@/src/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 import { ScrollArea } from "@/src/components/ui/scroll-area";
@@ -27,6 +28,7 @@ export function OperatorPage({ installationId }: { installationId: string }) {
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reply, setReply] = useState("");
+  const [resolveDialogOpen, setResolveDialogOpen] = useState(false);
 
   const ticketsQuery = useQuery({
     queryKey: ["conversations", installationId, 1],
@@ -68,9 +70,10 @@ export function OperatorPage({ installationId }: { installationId: string }) {
   });
 
   const resolveMutation = useMutation({
-    mutationFn: () =>
-      chatService.resolveConversation(activeTicketId ?? "", installationId),
+    mutationFn: (comment?: string) =>
+      chatService.resolveConversation(activeTicketId ?? "", installationId, comment),
     onSuccess: async () => {
+      setResolveDialogOpen(false);
       setSelectedId(null);
       setReply("");
       await invalidate();
@@ -128,7 +131,8 @@ export function OperatorPage({ installationId }: { installationId: string }) {
       <div>
         <h1 className="text-3xl font-semibold text-secondary">Операторская</h1>
         <p className="mt-2 text-slate-500">
-          Активные эскалации. Черновик считается только по кнопке — не на каждое сообщение гостя.
+          Активные эскалации. В режиме agent черновик пишется на каждое
+          сообщение гостя; в draft — после эскалации.
         </p>
       </div>
       <div className="grid gap-6 xl:grid-cols-[1fr_1.1fr_320px]">
@@ -231,7 +235,7 @@ export function OperatorPage({ installationId }: { installationId: string }) {
             onEditDraft={() =>
               setReply((current) => current || conversationQuery.data?.suggestedResponse || "")
             }
-            onResolve={() => resolveMutation.mutate()}
+            onResolve={() => setResolveDialogOpen(true)}
           />
         ) : (
           <Card>
@@ -241,6 +245,12 @@ export function OperatorPage({ installationId }: { installationId: string }) {
           </Card>
         )}
       </div>
+      <ResolveConfirmationDialog
+        open={resolveDialogOpen}
+        pending={resolveMutation.isPending}
+        onOpenChange={setResolveDialogOpen}
+        onConfirm={(comment) => resolveMutation.mutate(comment)}
+      />
     </div>
   );
 }

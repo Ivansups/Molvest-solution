@@ -103,7 +103,7 @@ export function KnowledgeDocumentPage() {
     },
     onError: (error) =>
       toast({
-        title: "Сохранение недоступно",
+        title: "Не удалось сохранить",
         description: error instanceof Error ? error.message : "Проверьте backend.",
         variant: "destructive",
       }),
@@ -220,10 +220,6 @@ export function KnowledgeDocumentPage() {
               {versionFileName ? (
                 <p className="text-sm text-slate-500">Выбрана версия: {versionFileName}</p>
               ) : null}
-              <div className="rounded-xl border border-warning/25 bg-warning/10 p-3 text-sm leading-6 text-foreground">
-                Обновление метаданных через API ещё не опубликовано на backend, поэтому
-                эта форма пока работает как подготовленный UI без серверного сохранения.
-              </div>
               <div className="flex gap-2">
                 <Button type="submit" className="flex-1">
                   Сохранить

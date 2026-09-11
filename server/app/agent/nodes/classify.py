@@ -19,6 +19,9 @@ async def classify(state: AgentState) -> dict[str, object]:
     `handoff_detect`: OpenRouter, при пустом ключе/сбое — GigaChat-2.
     """
     query = (state.get("query") or "").strip()
+    if state.get("force_handoff"):
+        logger.info("classify force_handoff query=%s", preview(query))
+        return {"query": query, "intent": "support"}
     if not query:
         logger.info("classify intent=empty")
         return {

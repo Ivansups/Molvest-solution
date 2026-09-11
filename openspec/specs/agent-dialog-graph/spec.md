@@ -76,6 +76,28 @@ After `classify` sets intent `support`, before any cache lookup or retrieve, the
 - **WHEN** the OpenRouter API key is empty and the user sends «позовите оператора» and GigaChat-2 returns `YES`
 - **THEN** OpenRouter is not invoked, intent is `handoff`, and the graph ends without retrieve or generate
 
+### Requirement: Forced handoff skips the classifier
+
+When the incoming chat request has `force_handoff=true`, the `handoff_detect`
+node SHALL set intent `handoff`, `escalated=true`, and the explicit handoff
+reason without calling OpenRouter or GigaChat. The graph SHALL then end
+without cache lookup, retrieve, or generate. This path SHALL work even if
+the query is a short canned phrase. The graph SHALL NOT inspect which
+channel produced the request.
+
+#### Scenario: Flag escalates without NLP
+
+- **WHEN** `force_handoff` is true and the text is the widget canned handoff
+  phrase
+- **THEN** intent is `handoff`, OpenRouter and GigaChat classify are not
+  called, and retrieve/generate do not run
+
+#### Scenario: Ordinary message still uses the classifier
+
+- **WHEN** `force_handoff` is false or omitted and the user sends a support
+  question
+- **THEN** `handoff_detect` still runs the lightweight YES/NO classifier
+
 ### Requirement: Answer cache is checked before retrieve
 
 After `handoff_detect` keeps intent `support`, the system SHALL look up the Redis answer cache keyed by `kb_version` and the normalized question. A hit SHALL return that text and SHALL NOT call retrieve or generate. A miss SHALL continue to retrieve. The system SHALL write the cache only after a successful generate that is not an escalation. Greeting and escalated answers SHALL NOT be written.

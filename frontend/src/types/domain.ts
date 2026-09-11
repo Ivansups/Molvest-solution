@@ -80,6 +80,8 @@ export interface UserProfile {
 export interface ConversationDetail extends ConversationPreview {
   userProfile: UserProfile;
   messages: ConversationMessage[];
+  resolveComment?: string | null;
+  resolveConfirmedAt?: string | null;
 }
 
 export interface DashboardMetric {
