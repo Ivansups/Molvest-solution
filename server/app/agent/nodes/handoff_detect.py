@@ -39,12 +39,14 @@ async def handoff_detect(
     if not query:
         return {}
 
+    # Текст гостя, не дамп Vision: иначе описание скрина путает YES/NO.
+    guest_text = (state.get("text") or "").strip() or query
     try:
-        handoff = await _is_handoff(query, classifier=classifier, llm=llm)
+        handoff = await _is_handoff(guest_text, classifier=classifier, llm=llm)
     except (OpenRouterError, GigaChatError) as exc:
         logger.warning(
             "handoff_detect сбой, эскалация query=%s (%s)",
-            preview(query),
+            preview(guest_text),
             exc,
         )
         return {
@@ -54,7 +56,7 @@ async def handoff_detect(
         }
 
     if handoff:
-        logger.info("handoff_detect запрос хэндоффа query=%s", preview(query))
+        logger.info("handoff_detect запрос хэндоффа query=%s", preview(guest_text))
         return {
             "intent": "handoff",
             "escalated": True,

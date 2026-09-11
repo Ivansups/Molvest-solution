@@ -215,7 +215,7 @@ async def run_chat_turn(
     graph_escalated = bool(final.get("escalated", False))
     confidence = float(final.get("confidence", 0.0))
     answer = final.get("answer") or ""
-    user_text = _user_content(request, final)
+    user_text = _hold_user_text(request)
     if (
         existing is not None
         and existing.status == ConversationStatus.ESCALATED
@@ -291,24 +291,11 @@ def _is_repeat_handoff(request: ChatRequest) -> bool:
 
 
 def _hold_user_text(request: ChatRequest) -> str | None:
-    """Текст гостя в draft-hold: без vision, картинка не пишется в image_url."""
+    """Текст гостя для ленты: исходная реплика, без дампа Vision."""
     if request.text and request.text.strip():
         return request.text
     if request.image_base64:
         return IMAGE_HOLD_TEXT
-    return request.text
-
-
-def _user_content(request: ChatRequest, final: dict[str, object]) -> str | None:
-    """Реплика пользователя для БД — `query`, а не сырой текст.
-
-    `query` после vision содержит описание скриншота, а сам скриншот не
-    сохраняется: `Message.image_url` рассчитан на ссылку, а не на base64.
-    Без описания у сообщения с одной картинкой не осталось бы содержимого.
-    """
-    query = final.get("query")
-    if isinstance(query, str) and query:
-        return query
     return request.text
 
 
