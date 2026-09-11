@@ -122,7 +122,8 @@ make setup          # .env + API + Postgres + UI
 Ключ: [developers.sber.ru/gigachat](https://developers.sber.ru/gigachat).
 
 Make, два способа гонять API, env и типичные поломки —
-[`docs/DEV.md`](docs/DEV.md). Проверки качества — GitHub Actions на PR и `main`.
+[`docs/DEV.md`](docs/DEV.md). Эксплуатация после старта —
+[`docs/OPS.md`](docs/OPS.md). Проверки качества — GitHub Actions на PR и `main`.
 
 ## Каналы
 
@@ -139,6 +140,7 @@ Make, два способа гонять API, env и типичные полом
 | Файл | Содержание |
 | --- | --- |
 | [docs/DEV.md](docs/DEV.md) | запуск, Make, `.env`, troubleshooting |
+| [docs/OPS.md](docs/OPS.md) | эксплуатация: env, `/health`, БЗ, режимы |
 | [docs/BITRIX.md](docs/BITRIX.md) | портал, ngrok, бот и коннектор |
 | [docs/REDMINE.md](docs/REDMINE.md) | вебхук тикета, IMAP |
 | [docs/SCENARIOS.md](docs/SCENARIOS.md) | 4 сценария ТЗ |
