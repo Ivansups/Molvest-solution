@@ -43,6 +43,8 @@ class ConversationOut(BaseModel):
     status: ConversationStatus
     created_at: datetime
     suggested_response: str | None = None
+    resolve_comment: str | None = None
+    resolve_confirmed_at: datetime | None = None
 
 
 class ConversationDetailOut(ConversationOut):
@@ -69,9 +71,17 @@ class OperatorMessageIn(BaseModel):
 
 
 class OperatorActionIn(BaseModel):
-    """Resolve или suggest: достаточно installation_id."""
+    """Suggest: достаточно installation_id."""
 
     installation_id: UUID
+
+
+class ResolveConversationIn(BaseModel):
+    """Закрытие тикета только после явного подтверждения оператора."""
+
+    installation_id: UUID
+    confirmed: bool
+    comment: str | None = Field(default=None, max_length=4000)
 
 
 class ConversationListParams(BaseModel):
@@ -95,6 +105,8 @@ def conversation_to_out(conversation: Conversation) -> ConversationOut:
         status=conversation.status,
         created_at=conversation.created_at,
         suggested_response=conversation.suggested_response,
+        resolve_comment=conversation.resolve_comment,
+        resolve_confirmed_at=conversation.resolve_confirmed_at,
     )
 
 

@@ -18,6 +18,7 @@ from app.schemas.conversations import (
     MessageOut,
     OperatorActionIn,
     OperatorMessageIn,
+    ResolveConversationIn,
     conversation_to_detail,
     conversation_to_out,
     message_to_out,
@@ -26,6 +27,7 @@ from app.selectors import conversations as conversation_selectors
 from app.services.agent import ConversationConflictError
 from app.services.operator import (
     ConversationNotFoundError,
+    ResolveNotConfirmedError,
     add_operator_reply,
     generate_suggestion,
     resolve_conversation,
@@ -157,20 +159,28 @@ async def add_operator_message_route(
 async def resolve_conversation_route(
     session: SessionDep,
     conversation_id: UUID,
-    body: OperatorActionIn,
+    body: ResolveConversationIn,
 ) -> ConversationOut:
-    """Закрывает эскалированный диалог."""
+    """Закрывает эскалированный диалог после confirmed=true."""
     logger.info(
-        "resolve conversation_id=%s installation_id=%s",
+        "resolve conversation_id=%s installation_id=%s confirmed=%s",
         conversation_id,
         body.installation_id,
+        body.confirmed,
     )
     try:
         conversation = await resolve_conversation(
             session,
             conversation_id=conversation_id,
             installation_id=body.installation_id,
+            confirmed=body.confirmed,
+            comment=body.comment,
         )
+    except ResolveNotConfirmedError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Нужно подтверждение закрытия",
+        ) from None
     except (ConversationNotFoundError, ConversationConflictError) as exc:
         _raise_operator_http(exc)
     return conversation_to_out(conversation)

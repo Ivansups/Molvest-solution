@@ -48,6 +48,14 @@ class Conversation(Base):
         Text,
         nullable=True,
     )
+    resolve_comment: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    resolve_confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
     messages: Mapped[list["Message"]] = relationship(
         back_populates="conversation",
