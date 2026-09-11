@@ -18,6 +18,7 @@ import {
 import { ApiStateCard } from "@/src/components/common/api-state-card";
 import { FileDropzone } from "@/src/components/common/file-dropzone";
 import { ConversationThread } from "@/src/components/common/conversation-thread";
+import { GuestHistoryList } from "@/src/components/common/guest-history-list";
 import { MessageBubble } from "@/src/components/common/message-bubble";
 import { OperatorAssistPanel } from "@/src/components/common/operator-assist-panel";
 import { ResolveConfirmationDialog } from "@/src/components/common/resolve-confirmation-dialog";
@@ -145,8 +146,8 @@ function ConversationListRow({
           <p className="truncate text-sm font-semibold text-secondary">
             {item.userId}
           </p>
-          <div className="mt-2 flex items-center justify-between gap-2">
-            <p className="min-w-0 truncate text-xs text-slate-500">
+          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <p className="min-w-0 flex-1 truncate text-xs text-slate-500">
               Создан {formatDateTime(item.createdAt)}
             </p>
             <Badge className={cn("shrink-0 gap-1", meta.chipClass)}>
@@ -201,8 +202,11 @@ export function ChatPage({
   const [draft, setDraft] = useState("");
   const {
     conversationId: guestConversationId,
+    history: guestHistory,
     setConversationId: setGuestConversationId,
     resetConversation,
+    rememberConversation,
+    forgetConversation,
   } = useConversation();
   const guestSessionGeneration = useRef(0);
   const [guestSessionEpoch, setGuestSessionEpoch] = useState(0);
@@ -497,14 +501,53 @@ export function ChatPage({
     guestSessionEpoch,
   );
 
-  const handleNewGuestConversation = (): void => {
+  useEffect(() => {
+    if (isSupportMode || !conversation) {
+      return;
+    }
+    rememberConversation({
+      id: conversation.id,
+      preview: conversation.lastMessage,
+      status: conversation.status,
+      updatedAt: conversation.lastMessageAt,
+    });
+  }, [conversation, isSupportMode, rememberConversation]);
+
+  useEffect(() => {
+    if (isSupportMode || !guestConversationId) {
+      return;
+    }
+    if (conversationQuery.isSuccess && conversationQuery.data === null) {
+      forgetConversation(guestConversationId);
+    }
+  }, [
+    conversationQuery.data,
+    conversationQuery.isSuccess,
+    forgetConversation,
+    guestConversationId,
+    isSupportMode,
+  ]);
+
+  const beginGuestSession = (): void => {
     guestSessionGeneration.current += 1;
     setGuestSessionEpoch(guestSessionGeneration.current);
     setPendingGuestGeneration(null);
-    resetConversation();
     setGuestMessages([]);
     setDraft("");
     setPendingImage(null);
+  };
+
+  const handleNewGuestConversation = (): void => {
+    beginGuestSession();
+    resetConversation();
+  };
+
+  const handleOpenGuestConversation = (conversationId: string): void => {
+    if (conversationId === guestConversationId) {
+      return;
+    }
+    beginGuestSession();
+    setGuestConversationId(conversationId);
   };
 
   if (!isSupportMode) {
@@ -546,7 +589,16 @@ export function ChatPage({
               </div>
               <ScrollArea className="flex-1">
                 <div className="space-y-4 p-6">
-                  {guestVisibleMessages.length === 0 ? (
+                  {Boolean(guestConversationId) &&
+                  conversationQuery.isLoading &&
+                  guestVisibleMessages.length === 0 ? (
+                    <div className="flex items-center gap-3 rounded-2xl border border-primary/15 bg-primary/5 p-4 text-sm text-secondary">
+                      <Spinner className="h-5 w-5 shrink-0" />
+                      <span>Загрузка обращения…</span>
+                    </div>
+                  ) : null}
+                  {guestVisibleMessages.length === 0 &&
+                  !(guestConversationId && conversationQuery.isLoading) ? (
                     <div className="rounded-[26px] border border-dashed border-border bg-slate-50/80 p-6">
                       <p className="text-base font-medium text-secondary">
                         Опишите проблему, код ошибки, форму 1С или приложите скриншот.
@@ -661,39 +713,12 @@ export function ChatPage({
             </div>
             <div className="border-t border-border/60 bg-slate-50/70 p-6 xl:border-l xl:border-t-0">
               <div className="space-y-4">
-                <div className="rounded-[24px] bg-white/92 p-5 shadow-[0_10px_24px_rgba(27,51,85,0.05)]">
-                  <p className="text-[11px] uppercase tracking-[0.22em] text-primary">
-                    Контекст обращения
-                  </p>
-                  <dl className="mt-4 divide-y divide-border/60">
-                    <div className="flex gap-3 py-3 first:pt-0 last:pb-0">
-                      <span
-                        className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
-                        aria-hidden="true"
-                      />
-                      <div>
-                        <dt className="text-sm font-medium text-secondary">
-                          Что указать в сообщении
-                        </dt>
-                        <dd className="mt-1 text-sm leading-6 text-slate-500">
-                          Код ошибки, название формы 1С и действие перед сбоем.
-                        </dd>
-                      </div>
-                    </div>
-                    <div className="flex gap-3 py-3 first:pt-0 last:pb-0">
-                      <span
-                        className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
-                        aria-hidden="true"
-                      />
-                      <div>
-                        <dt className="text-sm font-medium text-secondary">Скриншоты</dt>
-                        <dd className="mt-1 text-sm leading-6 text-slate-500">
-                          PNG и JPEG добавляются к сообщению и доступны для анализа.
-                        </dd>
-                      </div>
-                    </div>
-                  </dl>
-                </div>
+                <GuestHistoryList
+                  items={guestHistory}
+                  activeId={guestConversationId}
+                  onSelect={handleOpenGuestConversation}
+                  onNew={handleNewGuestConversation}
+                />
                 <div className="rounded-[24px] border border-secondary/12 bg-secondary p-5 text-white">
                   <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">
                     Закрытая панель
