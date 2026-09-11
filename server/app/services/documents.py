@@ -1,4 +1,4 @@
-"""Загрузка, удаление и реиндексация документов."""
+"""Загрузка, правка метаданных, удаление и реиндексация документов."""
 
 import asyncio
 import logging
@@ -112,6 +112,36 @@ async def upload_document(
         "файл сохранён document_id=%s path=%s",
         document.id,
         dest,
+    )
+    return document
+
+
+async def update_document_metadata(
+    session: AsyncSession,
+    document_id: UUID,
+    installation_id: UUID,
+    *,
+    title: str | None = None,
+    extra_metadata: dict[str, object] | None = None,
+) -> Document:
+    """Меняет title и/или extra_metadata. Чанки, статус и kb_version не трогает."""
+    document = await get_document(session, document_id, installation_id)
+    if document is None:
+        raise DocumentNotFoundError(document_id)
+    if title is not None:
+        document.title = title
+    if extra_metadata is not None:
+        # storage_path и indexing_error живут в том же JSON — не затираем их.
+        merged = dict(document.extra_metadata)
+        merged.update(extra_metadata)
+        document.extra_metadata = merged
+    await session.commit()
+    await session.refresh(document)
+    logger.info(
+        "метаданные документа обновлены document_id=%s title=%s metadata=%s",
+        document_id,
+        title is not None,
+        extra_metadata is not None,
     )
     return document
 

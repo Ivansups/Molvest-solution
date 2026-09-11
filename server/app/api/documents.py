@@ -1,4 +1,4 @@
-"""REST для админки базы знаний: список, загрузка, карточка, удаление, reindex."""
+"""REST для админки базы знаний: список, загрузка, карточка, правка, удаление."""
 
 import json
 import logging
@@ -27,6 +27,7 @@ from app.schemas.documents import (
     DocumentListOut,
     DocumentListParams,
     DocumentOut,
+    DocumentPatchIn,
     document_to_detail,
     document_to_out,
 )
@@ -38,6 +39,7 @@ from app.services.documents import (
     UnsupportedFileTypeError,
     delete_document,
     reindex_document,
+    update_document_metadata,
     upload_document,
 )
 
@@ -159,6 +161,39 @@ async def get_document_route(
         len(document.chunks),
     )
     return document_to_detail(document)
+
+
+@router.patch("/{document_id}")
+async def patch_document_route(
+    session: SessionDep,
+    document_id: UUID,
+    installation_id: UUID,
+    payload: DocumentPatchIn,
+) -> DocumentOut:
+    """Меняет title и/или metadata. Файл, чанки и статус не трогает."""
+    logger.info(
+        "patch document_id=%s installation_id=%s title=%s metadata=%s",
+        document_id,
+        installation_id,
+        payload.title is not None,
+        payload.metadata is not None,
+    )
+    try:
+        document = await update_document_metadata(
+            session,
+            document_id,
+            installation_id,
+            title=payload.title,
+            extra_metadata=payload.metadata,
+        )
+    except DocumentNotFoundError as exc:
+        logger.warning("patch: документ не найден document_id=%s", document_id)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Не найден",
+        ) from exc
+    logger.info("patch готов document_id=%s", document.id)
+    return document_to_out(document)
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)

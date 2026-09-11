@@ -38,3 +38,24 @@ export async function DELETE(
     method: "DELETE",
   });
 }
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: Params },
+): Promise<Response> {
+  const user = await requireAuthenticatedUser();
+  if (!user) {
+    return NextResponse.json(
+      { detail: "Требуется сессия сотрудника." },
+      { status: 401 },
+    );
+  }
+
+  const { documentId } = await params;
+  const scope = new URLSearchParams({ installation_id: user.installationId });
+  return proxyAdminApi(`/api/documents/${documentId}?${scope.toString()}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: await request.text(),
+  });
+}

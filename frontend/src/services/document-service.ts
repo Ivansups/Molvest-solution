@@ -1,8 +1,5 @@
 import { adminApiClient } from "@/src/api/admin-client";
-import {
-  toServiceError,
-  unsupportedEndpoint,
-} from "@/src/services/service-helpers";
+import { toServiceError } from "@/src/services/service-helpers";
 import type { DocumentDetailOut, DocumentListOut, DocumentOut, FileType } from "@/src/types/api";
 
 export const documentService = {
@@ -89,10 +86,22 @@ export const documentService = {
     category: string;
     description: string;
   }): Promise<DocumentDetailOut | null> {
-    unsupportedEndpoint(
-      `/api/documents/${payload.docId}`,
-      "Бэкенд пока не поддерживает обновление метаданных документа через PATCH.",
-    );
+    try {
+      await adminApiClient.patch<DocumentOut>(`/documents/${payload.docId}`, {
+        title: payload.title,
+        metadata: {
+          category: payload.category,
+          description: payload.description,
+        },
+      });
+      return await this.getDocument(payload.docId);
+    } catch (error) {
+      throw toServiceError(
+        error,
+        "Не удалось обновить метаданные документа.",
+        `/api/documents/${payload.docId}`,
+      );
+    }
   },
 
   async deleteDocument(docId: string): Promise<void> {
