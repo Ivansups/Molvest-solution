@@ -1,8 +1,9 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { Bot, FileText, UserCircle2, Wrench } from "lucide-react";
+import { FormattedMarkdown } from "@/src/components/common/formatted-markdown";
 import { Avatar, AvatarFallback } from "@/src/components/ui/avatar";
 import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
@@ -17,25 +18,50 @@ const roleMeta = {
   system: { label: "Система", icon: Bot, tone: "bg-amber-50/90" },
 } as const;
 
+function MessageBody({
+  role,
+  content,
+}: {
+  role: ConversationMessage["role"];
+  content: string;
+}) {
+  // Пользователь и системная эскалация — как есть.
+  if (role !== "assistant" && role !== "operator") {
+    return <p className="text-sm leading-6 text-foreground">{content}</p>;
+  }
+
+  return <FormattedMarkdown>{content}</FormattedMarkdown>;
+}
+
 export function MessageBubble({
   message,
   animate = false,
   hideConfidence = false,
+  enterFrom,
+  enterDelayMs = 0,
 }: {
   message: ConversationMessage;
   animate?: boolean;
   hideConfidence?: boolean;
+  enterFrom?: "left" | "right";
+  enterDelayMs?: number;
 }) {
   const meta = roleMeta[message.role];
   const Icon = meta.icon;
+  const enterStyle: CSSProperties | undefined = enterFrom
+    ? { animationDelay: `${enterDelayMs}ms` }
+    : undefined;
 
   return (
     <div
       className={cn(
         "soft-shadow flex gap-3 rounded-[24px] border border-white/70 p-4",
-        animate && "reveal-item",
+        enterFrom === "left" && "thread-enter-left",
+        enterFrom === "right" && "thread-enter-right",
+        animate && !enterFrom && "reveal-item",
         meta.tone,
       )}
+      style={enterStyle}
     >
       <Avatar className="h-11 w-11">
         <AvatarFallback>
@@ -54,7 +80,7 @@ export function MessageBubble({
             </Badge>
           ) : null}
         </div>
-        <p className="text-sm leading-6 text-foreground">{message.content}</p>
+        <MessageBody role={message.role} content={message.content} />
         {message.imageUrl ? (
           <Image
             src={message.imageUrl}
