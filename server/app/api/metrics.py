@@ -41,8 +41,4 @@ async def metrics_route(
         date_to=date_to,
     )
     logger.info("метрики готовы %s", data)
-    return ConversationMetrics(
-        auto_answer_percent=float(data["auto_answer_percent"]),
-        avg_response_time_seconds=float(data["avg_response_time_seconds"]),
-        escalation_count=int(data["escalation_count"]),
-    )
+    return data

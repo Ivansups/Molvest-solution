@@ -1,6 +1,6 @@
 """Схемы ответов и фильтров для API диалогов этапа 6."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import cast
 from uuid import UUID
 
@@ -151,9 +151,20 @@ def conversation_to_detail(
     )
 
 
+class MetricsDailyPoint(BaseModel):
+    """День с числом диалогов и эскалаций."""
+
+    date: date
+    conversation_count: int
+    escalation_count: int
+
+
 class ConversationMetrics(BaseModel):
     """Агрегированные метрики этапа 6."""
 
     auto_answer_percent: float
     avg_response_time_seconds: float
     escalation_count: int
+    answer_count: int
+    auto_answer_count: int
+    daily: list[MetricsDailyPoint]

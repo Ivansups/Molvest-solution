@@ -1,9 +1,9 @@
 """Чтение диалогов, их деталей и агрегированных метрик."""
 
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
-from sqlalchemy import case, func, select
+from sqlalchemy import Date, case, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute, selectinload
 from sqlalchemy.sql.elements import ColumnElement
@@ -12,7 +12,11 @@ from app.models.conversation import Conversation
 from app.models.enums import MessageRole
 from app.models.escalation import Escalation
 from app.models.message import Message
-from app.schemas.conversations import ConversationListParams
+from app.schemas.conversations import (
+    ConversationListParams,
+    ConversationMetrics,
+    MetricsDailyPoint,
+)
 
 _ANSWER_ROLES = (MessageRole.ASSISTANT, MessageRole.SYSTEM)
 
@@ -108,7 +112,7 @@ async def conversation_metrics(
     installation_id: UUID,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
-) -> dict[str, float | int]:
+) -> ConversationMetrics:
     """Агрегаты метрик одной установки: % автоответов, среднее время, эскалации."""
     message_filters = [
         Message.role.in_(_ANSWER_ROLES),
@@ -156,12 +160,76 @@ async def conversation_metrics(
         .where(*escalation_filters)
     )
     escalation_count = int(await session.scalar(escalation_count_stmt) or 0)
+    auto_answer_count = total - escalated_answers
 
-    return {
-        "auto_answer_percent": auto_answer_percent,
-        "avg_response_time_seconds": avg_response,
-        "escalation_count": escalation_count,
+    return ConversationMetrics(
+        auto_answer_percent=auto_answer_percent,
+        avg_response_time_seconds=avg_response,
+        escalation_count=escalation_count,
+        answer_count=total,
+        auto_answer_count=auto_answer_count,
+        daily=await _daily_activity(
+            session,
+            installation_id=installation_id,
+            date_from=date_from,
+            date_to=date_to,
+        ),
+    )
+
+
+def _as_date(value: datetime | date) -> date:
+    """Приводит timestamp из БД к календарной дате."""
+    if isinstance(value, datetime):
+        return value.date()
+    return value
+
+
+async def _daily_activity(
+    session: AsyncSession,
+    *,
+    installation_id: UUID,
+    date_from: datetime | None,
+    date_to: datetime | None,
+) -> list[MetricsDailyPoint]:
+    """Диалоги и эскалации по дням в том же окне, что и скалярные метрики."""
+    day_col = cast(Conversation.created_at, Date)
+    day_expr = day_col.label("day")
+    day_filters = [
+        Conversation.installation_id == installation_id,
+        *_date_range_filters(
+            Conversation.created_at, date_from=date_from, date_to=date_to
+        ),
+    ]
+
+    conversations_stmt = (
+        select(day_expr, func.count().label("total"))
+        .where(*day_filters)
+        .group_by(day_col)
+    )
+    escalations_stmt = (
+        select(day_expr, func.count().label("total"))
+        .select_from(Escalation)
+        .join(Conversation, Conversation.id == Escalation.conversation_id)
+        .where(*day_filters)
+        .group_by(day_col)
+    )
+
+    conversation_rows = (await session.execute(conversations_stmt)).all()
+    escalation_rows = (await session.execute(escalations_stmt)).all()
+
+    conversations_by_day = {
+        _as_date(row.day): int(row.total) for row in conversation_rows
     }
+    escalations_by_day = {_as_date(row.day): int(row.total) for row in escalation_rows}
+    days = sorted(set(conversations_by_day) | set(escalations_by_day))
+    return [
+        MetricsDailyPoint(
+            date=day_key,
+            conversation_count=conversations_by_day.get(day_key, 0),
+            escalation_count=escalations_by_day.get(day_key, 0),
+        )
+        for day_key in days
+    ]
 
 
 async def _avg_response_time_seconds(
