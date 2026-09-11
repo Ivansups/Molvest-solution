@@ -418,3 +418,33 @@ async def test_suggest_other_installation_404(
         json={"installation_id": str(OTHER)},
     )
     assert response.status_code == 404
+
+
+async def test_resolve_other_installation_404(
+    api_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    conv = await _escalated_conversation(db_session)
+    response = await api_client.post(
+        f"/api/conversations/{conv.id}/resolve",
+        json={"installation_id": str(OTHER), "confirmed": True},
+    )
+    assert response.status_code == 404
+
+
+async def test_resolve_already_resolved_confirmed_false_returns_200(
+    api_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    conv = await _escalated_conversation(db_session)
+    first = await api_client.post(
+        f"/api/conversations/{conv.id}/resolve",
+        json=_resolve_payload(),
+    )
+    assert first.status_code == 200
+    second = await api_client.post(
+        f"/api/conversations/{conv.id}/resolve",
+        json=_resolve_payload(confirmed=False),
+    )
+    assert second.status_code == 200
+    assert second.json()["status"] == "resolved"

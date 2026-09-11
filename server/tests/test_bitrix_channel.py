@@ -227,6 +227,42 @@ async def test_first_guest_message_creates_conversation_and_sends_reply(
     assert await_args.kwargs["connector_id"] == "linetest"
 
 
+async def test_agent_mode_high_score_does_not_send_to_guest(
+    api_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: MonkeyPatch,
+    llm_mock: object,
+    app_settings: Settings,
+    cache_mocks: object,
+    fake_bitrix: _FakeBitrixClient,
+) -> None:
+    runtime_settings.update_effective_settings(
+        confidence_threshold=0.8,
+        operator_assist_mode="agent",
+    )
+    _patch_auto_graph(monkeypatch, llm_mock, app_settings, answer="Ответ в канал")
+    response = await api_client.post(PATH, json=_payload())
+    assert response.status_code == 200
+    body = response.json()
+    assert body["escalated"] is True
+    fake_bitrix.send_message.assert_not_awaited()
+    conversation = await db_session.get(Conversation, UUID(body["conversation_id"]))
+    assert conversation is not None
+    assert conversation.status == ConversationStatus.ESCALATED
+    assert conversation.suggested_response == "Ответ в канал"
+    assistants = list(
+        (
+            await db_session.scalars(
+                select(Message).where(
+                    Message.conversation_id == conversation.id,
+                    Message.role == MessageRole.ASSISTANT,
+                )
+            )
+        ).all()
+    )
+    assert assistants == []
+
+
 async def test_invalid_token_rejected_403_without_state(
     api_client: AsyncClient,
     db_session: AsyncSession,

@@ -17,7 +17,10 @@ from app.models.message import Message
 from app.rag.retrieval import workspace_to_installation_id
 from app.schemas.chat import ChatRequest
 from app.services.agent import ConversationConflictError, run_chat_turn
-from app.services.channel_handoff import should_draft_followup
+from app.services.channel_handoff import (
+    escalate_if_agent_still_open,
+    should_draft_followup,
+)
 from app.services.conversations import add_user_message
 from app.services.draft import generate_draft
 from app.services.runtime_settings import get_effective_operator_assist_mode
@@ -126,6 +129,7 @@ async def _process_draft(
             channel_message_id=event.message_id,
         )
     )
+    await escalate_if_agent_still_open(session, conversation)
     await session.commit()
 
     draft = None

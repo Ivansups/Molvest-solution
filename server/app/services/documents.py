@@ -53,6 +53,17 @@ class UnsupportedFileTypeError(Exception):
         super().__init__(f"Тип файла {file_name} не поддерживается")
 
 
+class ReservedMetadataError(Exception):
+    """Клиент прислал служебные ключи metadata, которые PATCH не меняет."""
+
+    def __init__(self, keys: frozenset[str]) -> None:
+        self.keys = keys
+        super().__init__("нельзя менять служебные ключи: " + ", ".join(sorted(keys)))
+
+
+_RESERVED_METADATA_KEYS = frozenset({"storage_path", "indexing_error"})
+
+
 def file_type_from_name(file_name: str) -> FileType:
     """Определяет тип по расширению. Иначе UnsupportedFileTypeError."""
     suffix = Path(file_name).suffix.lower()
@@ -128,6 +139,10 @@ async def update_document_metadata(
     document = await get_document(session, document_id, installation_id)
     if document is None:
         raise DocumentNotFoundError(document_id)
+    if extra_metadata is not None:
+        reserved = _RESERVED_METADATA_KEYS.intersection(extra_metadata)
+        if reserved:
+            raise ReservedMetadataError(reserved)
     if title is not None:
         document.title = title
     if extra_metadata is not None:

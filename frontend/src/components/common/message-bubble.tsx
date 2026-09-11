@@ -20,9 +20,11 @@ const roleMeta = {
 export function MessageBubble({
   message,
   animate = false,
+  hideConfidence = false,
 }: {
   message: ConversationMessage;
   animate?: boolean;
+  hideConfidence?: boolean;
 }) {
   const meta = roleMeta[message.role];
   const Icon = meta.icon;
@@ -43,7 +45,7 @@ export function MessageBubble({
       <div className="min-w-0 flex-1 space-y-3">
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-sm font-semibold text-secondary">{meta.label}</p>
-          {message.confidence !== undefined ? (
+          {message.confidence !== undefined && !hideConfidence ? (
             <Badge>Уверенность {Math.round(message.confidence * 100)}%</Badge>
           ) : null}
           {message.escalated ? (

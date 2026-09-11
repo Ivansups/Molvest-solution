@@ -72,11 +72,11 @@ async def resolve_conversation(
     conversation = await _require_conversation(
         session, conversation_id, installation_id
     )
-    if not confirmed:
-        raise ResolveNotConfirmedError
     if conversation.status == ConversationStatus.RESOLVED:
         logger.info("resolve повтор conversation_id=%s", conversation.id)
         return conversation
+    if not confirmed:
+        raise ResolveNotConfirmedError
     try:
         transition_status(conversation, ConversationStatus.RESOLVED)
     except IllegalStatusTransitionError as exc:

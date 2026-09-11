@@ -31,6 +31,8 @@ from app.services.runtime_settings import (
 
 # Причина эскалации, когда режим agent удерживает готовый ответ ИИ.
 AGENT_HOLD_REASON = "Режим agent: ответ ИИ ждёт подтверждения оператора"
+# Текст кнопки «Позвать оператора» в виджете — повтор не должен перетирать черновик.
+_GUEST_HANDOFF_TEXT = "Позовите оператора"
 
 logger = logging.getLogger(__name__)
 
@@ -70,13 +72,13 @@ def apply_operator_reply_policy(
 
     Роутеры и канальные адаптеры не ветвят режим — смотрят `escalated`.
     """
-    if mode == "agent" and answer and not graph_escalated and intent != "empty":
+    if mode == "agent" and not graph_escalated and intent != "empty":
         return GuestReplyDecision(
             escalated=True,
             guest_text=GUEST_ESCALATION_TEXT,
             persist_sources=[],
             escalation_reason=AGENT_HOLD_REASON,
-            suggested_response=answer,
+            suggested_response=answer or None,
             fill_draft_after_commit=False,
         )
     if mode == "agent" and graph_escalated:
@@ -156,18 +158,33 @@ async def run_chat_turn(
         and existing.status == ConversationStatus.ESCALATED
         and mode == "agent"
     ):
-        await persist_draft_followup(
-            session,
-            conversation=existing,
-            user_text=_hold_user_text(request),
-            user_image=None,
-            channel=channel,
-            channel_message_id=channel_message_id,
-        )
-        logger.info(
-            "agent follow-up conversation_id=%s черновик без ответа гостю",
-            existing.id,
-        )
+        if _is_repeat_handoff(request):
+            await persist_guest_hold(
+                session,
+                conversation=existing,
+                user_text=_hold_user_text(request),
+                user_image=None,
+                user_created_at=turn_started_at,
+                channel=channel,
+                channel_message_id=channel_message_id,
+            )
+            logger.info(
+                "agent повторный handoff conversation_id=%s без смены черновика",
+                existing.id,
+            )
+        else:
+            await persist_draft_followup(
+                session,
+                conversation=existing,
+                user_text=_hold_user_text(request),
+                user_image=None,
+                channel=channel,
+                channel_message_id=channel_message_id,
+            )
+            logger.info(
+                "agent follow-up conversation_id=%s черновик без ответа гостю",
+                existing.id,
+            )
         return ChatResponse(
             conversation_id=existing.id,
             message_id=request.message_id,
@@ -232,7 +249,7 @@ async def run_chat_turn(
         )
 
     decision = apply_operator_reply_policy(
-        mode=get_effective_operator_assist_mode(),
+        mode=mode,
         intent=str(final.get("intent") or ""),
         graph_escalated=graph_escalated,
         answer=answer,
@@ -272,6 +289,14 @@ async def run_chat_turn(
         escalated=decision.escalated,
         sources=decision.persist_sources,
     )
+
+
+def _is_repeat_handoff(request: ChatRequest) -> bool:
+    """Повтор «Позвать оператора» в эскалированном диалоге — черновик не трогаем."""
+    if request.force_handoff:
+        return True
+    text = (request.text or "").strip()
+    return text == _GUEST_HANDOFF_TEXT
 
 
 def _hold_user_text(request: ChatRequest) -> str | None:

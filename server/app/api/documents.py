@@ -36,6 +36,7 @@ from app.services.documents import (
     DocumentNotFoundError,
     DuplicateDocumentError,
     ReindexFailedError,
+    ReservedMetadataError,
     UnsupportedFileTypeError,
     delete_document,
     reindex_document,
@@ -186,6 +187,12 @@ async def patch_document_route(
             title=payload.title,
             extra_metadata=payload.metadata,
         )
+    except ReservedMetadataError as exc:
+        logger.warning(
+            "patch: служебные ключи metadata document_id=%s",
+            document_id,
+        )
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except DocumentNotFoundError as exc:
         logger.warning("patch: документ не найден document_id=%s", document_id)
         raise HTTPException(

@@ -357,6 +357,37 @@ async def test_patch_metadata_round_trip(api_client: AsyncClient) -> None:
     assert detail.json()["metadata"]["description"] == "Как провести документ"
 
 
+async def test_patch_reserved_metadata_keys_rejected(
+    api_client: AsyncClient,
+) -> None:
+    code, created = await _upload(api_client, "reserved.pdf")
+    assert code == 201
+    document_id = str(created["id"])
+    scope = {"installation_id": str(INSTALL_A)}
+    stored_path = created["metadata"]["storage_path"]  # type: ignore[index]
+
+    patched = await api_client.patch(
+        f"/api/documents/{document_id}",
+        params=scope,
+        json={"metadata": {"storage_path": "/tmp/evil", "category": "1С"}},
+    )
+    assert patched.status_code == 422
+
+    indexing = await api_client.patch(
+        f"/api/documents/{document_id}",
+        params=scope,
+        json={"metadata": {"indexing_error": "подмена"}},
+    )
+    assert indexing.status_code == 422
+
+    detail = await api_client.get(f"/api/documents/{document_id}", params=scope)
+    assert detail.status_code == 200
+    metadata = detail.json()["metadata"]
+    assert metadata["storage_path"] == stored_path
+    assert "category" not in metadata
+    assert metadata.get("indexing_error") != "подмена"
+
+
 async def test_patch_empty_body_is_422(api_client: AsyncClient) -> None:
     code, created = await _upload(api_client, "empty-patch.pdf")
     assert code == 201

@@ -409,6 +409,7 @@ export function ChatPage({
                       key={message.id}
                       message={message}
                       animate={index === guestVisibleMessages.length - 1}
+                      hideConfidence
                     />
                   ))}
                   {guestSendPending ? (
@@ -478,7 +479,7 @@ export function ChatPage({
                       type="button"
                       variant="outline"
                       onClick={() => sendMutation.mutate({ forceHandoff: true })}
-                      disabled={guestSendPending || guestClosed}
+                      disabled={guestSendPending || guestClosed || guestEscalated}
                     >
                       <Headset className="h-4 w-4" />
                       Позвать оператора

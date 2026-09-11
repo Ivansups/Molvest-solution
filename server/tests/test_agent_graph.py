@@ -21,7 +21,11 @@ from app.core.gigachat_client import GigaChatError, GigaChatService
 from app.core.openrouter_client import OpenRouterClassifier, OpenRouterError
 from app.schemas.chat import ChatRequest
 from app.services import runtime_settings
-from app.services.agent import AGENT_HOLD_REASON, run_chat_turn
+from app.services.agent import (
+    AGENT_HOLD_REASON,
+    apply_operator_reply_policy,
+    run_chat_turn,
+)
 from app.services.conversations import GUEST_ESCALATION_TEXT
 
 _INSTALLATION_ID = "7c77cfdc-2806-4e0f-a95f-c98d7a5b2f11"
@@ -1263,3 +1267,148 @@ async def test_agent_followup_updates_suggested_response(
         )
     )
     assert assistant_count == 0
+
+
+def test_agent_empty_answer_holds_even_at_high_score() -> None:
+    from app.schemas.chat import Source
+
+    decision = apply_operator_reply_policy(
+        mode="agent",
+        intent="support",
+        graph_escalated=False,
+        answer="",
+        sources=[
+            Source(
+                document_id=UUID(int=1),
+                title="Инструкция",
+                chunk_text="провести",
+            )
+        ],
+        graph_escalation_reason="",
+    )
+    assert decision.escalated is True
+    assert decision.guest_text == GUEST_ESCALATION_TEXT
+    assert decision.suggested_response is None
+    assert decision.persist_sources == []
+
+
+async def test_agent_high_score_empty_answer_escalates_without_model_text(
+    monkeypatch: pytest.MonkeyPatch,
+    chat_request: ChatRequest,
+    llm_mock: MagicMock,
+    app_settings: Settings,
+    reset_graph_singleton: None,
+    cache_mocks: tuple[AsyncMock, AsyncMock],
+    db_session: AsyncSession,
+) -> None:
+    from sqlalchemy import func, select
+
+    import app.services.agent as agent_service
+    from app.models.conversation import Conversation
+    from app.models.enums import ConversationStatus, MessageRole
+    from app.models.message import Message
+
+    runtime_settings.update_effective_settings(
+        confidence_threshold=0.8,
+        operator_assist_mode="agent",
+    )
+    llm_mock.generate = AsyncMock(return_value="")
+    graph = build_graph(llm_mock, app_settings, retriever=_hit_retriever)
+    monkeypatch.setattr(agent_service, "get_graph", lambda: graph)
+
+    response = await run_chat_turn(chat_request, db_session)
+    assert response.escalated is True
+    assert response.text == GUEST_ESCALATION_TEXT
+
+    conversation = await db_session.get(Conversation, response.conversation_id)
+    assert conversation is not None
+    assert conversation.status == ConversationStatus.ESCALATED
+    assert conversation.suggested_response is None
+    assistant_count = await db_session.scalar(
+        select(func.count())
+        .select_from(Message)
+        .where(
+            Message.conversation_id == conversation.id,
+            Message.role == MessageRole.ASSISTANT,
+        )
+    )
+    assert assistant_count == 0
+    system_rows = list(
+        (
+            await db_session.scalars(
+                select(Message).where(
+                    Message.conversation_id == conversation.id,
+                    Message.role == MessageRole.SYSTEM,
+                )
+            )
+        ).all()
+    )
+    assert [row.content for row in system_rows] == [GUEST_ESCALATION_TEXT]
+
+
+async def test_force_handoff_on_escalated_agent_keeps_draft(
+    monkeypatch: pytest.MonkeyPatch,
+    chat_request: ChatRequest,
+    llm_mock: MagicMock,
+    app_settings: Settings,
+    reset_graph_singleton: None,
+    cache_mocks: tuple[AsyncMock, AsyncMock],
+    db_session: AsyncSession,
+) -> None:
+    from sqlalchemy import func, select
+
+    import app.services.agent as agent_service
+    import app.services.channel_handoff as channel_handoff
+    from app.models.conversation import Conversation
+    from app.models.enums import ConversationStatus, MessageRole
+    from app.models.escalation import Escalation
+    from app.models.message import Message
+
+    runtime_settings.update_effective_settings(
+        confidence_threshold=0.8,
+        operator_assist_mode="agent",
+    )
+    llm_mock.generate = AsyncMock(return_value="Первый ответ")
+    graph = build_graph(llm_mock, app_settings, retriever=_hit_retriever)
+    monkeypatch.setattr(agent_service, "get_graph", lambda: graph)
+
+    first = await run_chat_turn(chat_request, db_session)
+    generate_draft = AsyncMock(return_value="не должен")
+    monkeypatch.setattr(channel_handoff, "generate_draft", generate_draft)
+    monkeypatch.setattr(
+        agent_service,
+        "get_graph",
+        lambda: (_ for _ in ()).throw(AssertionError("граф не должен вызываться")),
+    )
+    replay = chat_request.model_copy(
+        update={
+            "conversation_id": first.conversation_id,
+            "message_id": uuid4(),
+            "text": "Позовите оператора",
+            "force_handoff": True,
+        }
+    )
+    second = await run_chat_turn(replay, db_session)
+    assert second.escalated is True
+    assert second.text == GUEST_ESCALATION_TEXT
+    generate_draft.assert_not_awaited()
+
+    conversation = await db_session.get(Conversation, first.conversation_id)
+    assert conversation is not None
+    assert conversation.status == ConversationStatus.ESCALATED
+    assert conversation.suggested_response == "Первый ответ"
+    count = await db_session.scalar(
+        select(func.count())
+        .select_from(Escalation)
+        .where(Escalation.conversation_id == first.conversation_id)
+    )
+    assert count == 1
+    user_count = await db_session.scalar(
+        select(func.count())
+        .select_from(Message)
+        .where(
+            Message.conversation_id == conversation.id,
+            Message.role == MessageRole.USER,
+        )
+    )
+    assert user_count == 2
