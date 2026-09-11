@@ -26,6 +26,22 @@ exists and status is still `open`).
 - **WHEN** a Bitrix dialog that already has a `role=operator` message receives a guest message in `draft` mode
 - **THEN** a draft is stored for the operator and no guest-facing Bitrix reply is sent
 
+### Requirement: Assist mode `agent` after operator is draft-only
+
+When a Bitrix bot or connector guest message arrives for a conversation that
+is `escalated` or already has an operator message, and effective assist mode
+is `agent`, the system SHALL behave as in `draft`: persist the user
+message, run `generate_draft`, store `suggested_response`, and SHALL NOT send
+a guest-facing auto-reply. Mode `auto` SHALL keep its existing auto-reply
+path.
+
+#### Scenario: Реплика гостя после эскалации в режиме `agent`
+
+- **WHEN** an already `escalated` Bitrix bot dialog receives a new guest
+  message in `agent` mode
+- **THEN** a user message is stored, `suggested_response` is updated from
+  generate_draft, and `imbot.message.add` is not called for a guest answer
+
 ### Requirement: Auto после оператора отвечает гостю тем же ядром
 
 When the same post-operator (or already `escalated`) Bitrix guest message
