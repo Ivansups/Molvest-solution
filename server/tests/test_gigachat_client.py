@@ -31,6 +31,9 @@ def _service(
 ) -> tuple[GigaChatService, MagicMock]:
     client = MagicMock()
     client.achat.create = AsyncMock(return_value=_chat_response("ok"))
+    uploaded_file = MagicMock()
+    uploaded_file.id_ = "file-123"
+    client.aupload_file = AsyncMock(return_value=uploaded_file)
     embedding_item = MagicMock()
     embedding_item.embedding = [0.1, 0.2]
     embeddings = MagicMock()
@@ -83,31 +86,40 @@ async def test_classify_handoff_times_out() -> None:
         await service.classify_handoff("позовите оператора", system_prompt="p")
 
 
-async def test_chat_with_vision_adds_data_url_prefix() -> None:
+_PNG_BASE64 = base64.b64encode(b"png-bytes").decode()
+_JPEG_MAGIC = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01"
+
+
+async def test_chat_with_vision_uploads_file_and_references_it() -> None:
+    """GigaChat читает картинку только через files.id — не inline data: URL."""
     service, client = _service()
-    await service.chat_with_vision("iVBORw0KGgo", "опиши")
+    await service.chat_with_vision(_PNG_BASE64, "опиши")
+    client.aupload_file.assert_awaited_once()
+    filename, content, mime = client.aupload_file.await_args.args[0]
+    assert filename == "screenshot.png"
+    assert content == base64.b64decode(_PNG_BASE64)
+    assert mime == "image/png"
     request = client.achat.create.await_args.args[0]
     image_part = request.messages[0].content[1]
-    extra = image_part.model_dump()
-    assert extra["image_url"]["url"] == "data:image/png;base64,iVBORw0KGgo"
+    assert image_part.files[0].id_ == "file-123"
 
 
 async def test_chat_with_vision_strips_existing_prefix() -> None:
     service, client = _service()
-    await service.chat_with_vision("data:image/png;base64,ABC", "опиши")
-    request = client.achat.create.await_args.args[0]
-    image_part = request.messages[0].content[1]
-    assert image_part.model_dump()["image_url"]["url"] == ("data:image/png;base64,ABC")
+    await service.chat_with_vision(f"data:image/png;base64,{_PNG_BASE64}", "опиши")
+    client.aupload_file.assert_awaited_once()
+    _filename, content, _mime = client.aupload_file.await_args.args[0]
+    assert content == base64.b64decode(_PNG_BASE64)
 
 
 async def test_chat_with_vision_detects_jpeg() -> None:
     """Клиент сжимает скриншоты в JPEG — MIME берём из сигнатуры, не хардкодим."""
     service, client = _service()
-    jpeg = base64.b64encode(b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01").decode()
+    jpeg = base64.b64encode(_JPEG_MAGIC).decode()
     await service.chat_with_vision(jpeg, "опиши")
-    request = client.achat.create.await_args.args[0]
-    image_part = request.messages[0].content[1]
-    assert image_part.model_dump()["image_url"]["url"].startswith("data:image/jpeg;")
+    filename, _content, mime = client.aupload_file.await_args.args[0]
+    assert filename == "screenshot.jpg"
+    assert mime == "image/jpeg"
 
 
 @pytest.mark.parametrize("model", ["Embeddings", "Embeddings-2"])

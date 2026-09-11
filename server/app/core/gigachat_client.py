@@ -1,6 +1,7 @@
 """Единый клиент GigaChat: генерация, Vision и эмбеддинги."""
 
 import asyncio
+import base64
 import logging
 from collections.abc import Sequence
 from typing import Literal, TypedDict
@@ -9,6 +10,7 @@ from gigachat import GigaChat
 from gigachat.models import (
     ChatCompletionRequest,
     ChatCompletionResponse,
+    ChatContentFile,
     ChatContentPart,
     ChatMessage,
 )
@@ -118,10 +120,12 @@ class GigaChatService:
             len(prompt),
         )
         payload = _strip_data_url_prefix(image_base64)
-        data_url = f"data:{_image_mime(payload)};base64,{payload}"
-        image_part = ChatContentPart.model_validate(
-            {"type": "image_url", "image_url": {"url": data_url}}
+        mime = _image_mime(payload)
+        filename = "screenshot.jpg" if mime == "image/jpeg" else "screenshot.png"
+        uploaded = await self._client.aupload_file(
+            (filename, base64.b64decode(payload), mime)
         )
+        image_part = ChatContentPart(files=[ChatContentFile(id=uploaded.id_)])
         request = ChatCompletionRequest(
             messages=[
                 ChatMessage(
