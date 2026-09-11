@@ -23,7 +23,7 @@ import { settingsService } from "@/src/services/settings-service";
 
 const schema = z.object({
   confidence_threshold: z.number().min(0.5).max(0.99),
-  operator_assist_mode: z.enum(["draft", "auto"]),
+  operator_assist_mode: z.enum(["draft", "auto", "agent"]),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -149,12 +149,18 @@ export function SettingsPage() {
                     <SelectTrigger>
                       <SelectValue placeholder="Режим" />
                     </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="draft">
-                        draft — черновик только по запросу оператора
+                    <SelectContent className="max-w-[min(36rem,calc(100vw-2rem))]">
+                      <SelectItem value="auto" className="whitespace-normal">
+                        Если уверен — отвечает гостю сразу; после эскалации тоже
+                        может ответить сам
                       </SelectItem>
-                      <SelectItem value="auto">
-                        auto — агент может ответить гостю после эскалации
+                      <SelectItem value="draft" className="whitespace-normal">
+                        Если уверен — отвечает гостю сразу; после эскалации —
+                        только черновик оператору
+                      </SelectItem>
+                      <SelectItem value="agent" className="whitespace-normal">
+                        ИИ никогда не пишет в чат гостя, пока оператор не нажмёт
+                        Отправить
                       </SelectItem>
                     </SelectContent>
                   </Select>

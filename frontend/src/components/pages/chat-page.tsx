@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Ellipsis,
+  Headset,
   ImagePlus,
   RefreshCw,
   Send,
@@ -15,6 +16,7 @@ import { ApiStateCard } from "@/src/components/common/api-state-card";
 import { FileDropzone } from "@/src/components/common/file-dropzone";
 import { MessageBubble } from "@/src/components/common/message-bubble";
 import { OperatorAssistPanel } from "@/src/components/common/operator-assist-panel";
+import { ResolveConfirmationDialog } from "@/src/components/common/resolve-confirmation-dialog";
 import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
@@ -40,6 +42,7 @@ import { useConversation } from "@/src/hooks/use-conversation";
 import { useToast } from "@/src/hooks/use-toast";
 import { formatDateTime } from "@/src/lib/format";
 import {
+  GUEST_HANDOFF_TEXT,
   isActiveGuestSend,
   isStaleGuestGeneration,
 } from "@/src/lib/guest-session";
@@ -86,6 +89,7 @@ export function ChatPage({
   >(null);
   const [guestMessages, setGuestMessages] = useState<ConversationMessage[]>([]);
   const [imageDialogOpen, setImageDialogOpen] = useState(false);
+  const [resolveDialogOpen, setResolveDialogOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [pendingImage, setPendingImage] = useState<{
     name: string;
@@ -130,7 +134,7 @@ export function ChatPage({
   });
 
   const sendMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (options?: { forceHandoff?: boolean }) => {
       if (isSupportMode) {
         const text =
           draft.trim() || conversationQuery.data?.suggestedResponse?.trim() || "";
@@ -140,7 +144,8 @@ export function ChatPage({
         await chatService.sendOperatorReply(selectedId, installationId, text);
         return { kind: "operator" as const };
       }
-      if (!draft.trim() && !pendingImage) {
+      const forceHandoff = Boolean(options?.forceHandoff);
+      if (!forceHandoff && !draft.trim() && !pendingImage) {
         return null;
       }
 
@@ -149,16 +154,22 @@ export function ChatPage({
           conversationQuery.data?.messages.some((message) => message.escalated) ||
           guestMessages.some((message) => message.escalated),
       );
-      const userContent = draft.trim() || "Пользователь отправил изображение";
-      const imageUrl = pendingImage?.previewUrl;
+      const userContent = forceHandoff
+        ? GUEST_HANDOFF_TEXT
+        : draft.trim() || "Пользователь отправил изображение";
+      const imageUrl = forceHandoff ? undefined : pendingImage?.previewUrl;
       const guestUserId = `guest-${guestConversationId ?? "session"}`;
       const data = await chatService.sendMessage({
         message_id: crypto.randomUUID(),
         workspace_id: installationId,
         conversation_id: selectedId,
-        text: draft.trim() || null,
-        image_base64: pendingImage ? dataUrlToBase64(pendingImage.previewUrl) : null,
+        text: forceHandoff ? GUEST_HANDOFF_TEXT : draft.trim() || null,
+        image_base64:
+          forceHandoff || !pendingImage
+            ? null
+            : dataUrlToBase64(pendingImage.previewUrl),
         user_id: user?.id ?? guestUserId,
+        ...(forceHandoff ? { force_handoff: true } : {}),
       });
       return {
         kind: "guest" as const,
@@ -166,6 +177,7 @@ export function ChatPage({
         userContent,
         imageUrl,
         alreadyEscalated,
+        forceHandoff,
       };
     },
     onMutate: (): { generation: number } => {
@@ -210,10 +222,11 @@ export function ChatPage({
           escalated: result.data.escalated,
           sources: result.data.sources,
         };
+        const showReply = result.forceHandoff || !result.alreadyEscalated;
         setGuestConversationId(conversationId);
         setGuestMessages((current) => {
           const next = [...current, userMessage];
-          if (!result.alreadyEscalated) {
+          if (showReply) {
             next.push(replyMessage);
           }
           return next;
@@ -226,9 +239,9 @@ export function ChatPage({
             }
             return {
               ...current,
-              messages: result.alreadyEscalated
-                ? [...current.messages, userMessage]
-                : [...current.messages, userMessage, replyMessage],
+              messages: showReply
+                ? [...current.messages, userMessage, replyMessage]
+                : [...current.messages, userMessage],
             };
           },
         );
@@ -237,7 +250,7 @@ export function ChatPage({
             result.data.escalated && !result.alreadyEscalated
               ? "Диалог эскалирован"
               : "Сообщение отправлено",
-          description: result.alreadyEscalated ? undefined : result.data.text,
+          description: showReply ? result.data.text : undefined,
         });
       } else {
         setDraft("");
@@ -302,13 +315,18 @@ export function ChatPage({
   });
 
   const resolveMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: (comment?: string) => {
       if (!selectedId) {
         return Promise.resolve();
       }
-      return chatService.resolveConversation(selectedId, installationId);
+      return chatService.resolveConversation(
+        selectedId,
+        installationId,
+        comment,
+      );
     },
     onSuccess: async () => {
+      setResolveDialogOpen(false);
       await queryClient.invalidateQueries({ queryKey: ["conversations"] });
       await queryClient.invalidateQueries({ queryKey: ["conversation"] });
       toast({ title: "Диалог закрыт" });
@@ -397,9 +415,14 @@ export function ChatPage({
                     <div className="flex items-center gap-3 rounded-2xl border border-primary/15 bg-primary/5 p-4 text-sm text-secondary">
                       <Spinner className="h-5 w-5 shrink-0" />
                       <span>
-                        {pendingImage
-                          ? "Анализ изображения..."
-                          : "Агент формирует ответ..."}
+                        {pendingImage && !sendMutation.variables?.forceHandoff
+                          ? "анализ изображения…"
+                          : "агент формирует ответ…"}
+                      </span>
+                      <span className="typing-dots" aria-hidden="true">
+                        <span />
+                        <span />
+                        <span />
                       </span>
                     </div>
                   ) : null}
@@ -441,15 +464,26 @@ export function ChatPage({
                   disabled={guestClosed}
                 />
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setImageDialogOpen(true)}
-                    disabled={guestClosed}
-                  >
-                    <ImagePlus className="h-4 w-4" />
-                    Прикрепить скриншот
-                  </Button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setImageDialogOpen(true)}
+                      disabled={guestClosed}
+                    >
+                      <ImagePlus className="h-4 w-4" />
+                      Прикрепить скриншот
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => sendMutation.mutate({ forceHandoff: true })}
+                      disabled={guestSendPending || guestClosed}
+                    >
+                      <Headset className="h-4 w-4" />
+                      Позвать оператора
+                    </Button>
+                  </div>
                   <Button
                     type="button"
                     onClick={() => sendMutation.mutate()}
@@ -562,7 +596,7 @@ export function ChatPage({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem
-                onClick={() => resolveMutation.mutate()}
+                onClick={() => setResolveDialogOpen(true)}
                 disabled={resolveMutation.isPending || conversation.status !== "escalated"}
               >
                 Пометить как resolved
@@ -714,7 +748,7 @@ export function ChatPage({
             onEditDraft={() =>
               setDraft((current) => current || conversation.suggestedResponse)
             }
-            onResolve={() => resolveMutation.mutate()}
+            onResolve={() => setResolveDialogOpen(true)}
           />
         ) : (
           <Card className="h-[calc(100vh-14rem)]">
@@ -724,6 +758,12 @@ export function ChatPage({
           </Card>
         )}
       </div>
+      <ResolveConfirmationDialog
+        open={resolveDialogOpen}
+        pending={resolveMutation.isPending}
+        onOpenChange={setResolveDialogOpen}
+        onConfirm={(comment) => resolveMutation.mutate(comment)}
+      />
     </div>
   );
 }

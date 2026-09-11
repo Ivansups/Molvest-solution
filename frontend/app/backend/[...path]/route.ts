@@ -44,7 +44,14 @@ function isGuestConversationPoll(method: string, path: string[]): boolean {
   );
 }
 
-async function stripSuggestedResponse(upstream: Response): Promise<Response> {
+/** Черновик и комментарий закрытия — только оператору, не гостевому poll. */
+const GUEST_HIDDEN_FIELDS = [
+  "suggested_response",
+  "resolve_comment",
+  "resolve_confirmed_at",
+] as const;
+
+async function stripOperatorOnlyFields(upstream: Response): Promise<Response> {
   const headers = copyHopSafe(upstream.headers);
   headers.delete("content-length");
   const contentType = upstream.headers.get("content-type") ?? "";
@@ -58,7 +65,9 @@ async function stripSuggestedResponse(upstream: Response): Promise<Response> {
   const payload: unknown = await upstream.json();
   if (payload !== null && typeof payload === "object" && !Array.isArray(payload)) {
     const body = { ...(payload as Record<string, unknown>) };
-    delete body.suggested_response;
+    for (const field of GUEST_HIDDEN_FIELDS) {
+      delete body[field];
+    }
     return Response.json(body, {
       status: upstream.status,
       statusText: upstream.statusText,
@@ -107,7 +116,7 @@ async function proxy(
   });
 
   if (guestPoll && !session) {
-    return stripSuggestedResponse(upstream);
+    return stripOperatorOnlyFields(upstream);
   }
 
   return new Response(upstream.body, {

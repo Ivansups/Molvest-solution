@@ -61,6 +61,8 @@ describe("backend proxy", () => {
         JSON.stringify({
           id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
           suggested_response: "секретный черновик",
+          resolve_comment: "закрыли",
+          resolve_confirmed_at: "2026-09-11T06:39:13.523044+00:00",
           messages: [],
         }),
         { status: 200, headers: { "content-type": "application/json" } },
@@ -76,8 +78,14 @@ describe("backend proxy", () => {
 
     expect(response.status).toBe(200);
     expect(upstream).toHaveBeenCalledOnce();
-    const body = (await response.json()) as { suggested_response?: string };
+    const body = (await response.json()) as {
+      suggested_response?: string;
+      resolve_comment?: string;
+      resolve_confirmed_at?: string;
+    };
     expect(body.suggested_response).toBeUndefined();
+    expect(body.resolve_comment).toBeUndefined();
+    expect(body.resolve_confirmed_at).toBeUndefined();
   });
 
   it("keepsDraftForStaffConversationPoll", async () => {
@@ -87,6 +95,7 @@ describe("backend proxy", () => {
         JSON.stringify({
           id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
           suggested_response: "черновик оператора",
+          resolve_comment: "закрыли",
           messages: [],
         }),
         { status: 200, headers: { "content-type": "application/json" } },
@@ -101,8 +110,12 @@ describe("backend proxy", () => {
     );
 
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { suggested_response?: string };
+    const body = (await response.json()) as {
+      suggested_response?: string;
+      resolve_comment?: string;
+    };
     expect(body.suggested_response).toBe("черновик оператора");
+    expect(body.resolve_comment).toBe("закрыли");
   });
 
   it("allowsAnonymousGuestChat", async () => {

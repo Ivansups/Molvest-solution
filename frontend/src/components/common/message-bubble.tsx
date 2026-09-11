@@ -101,12 +101,22 @@ export function MessageBubble({
   );
 }
 
+const SOURCE_EXCERPT_LENGTH = 200;
+
+function excerptChunkText(chunkText: string): string {
+  if (chunkText.length <= SOURCE_EXCERPT_LENGTH) {
+    return chunkText;
+  }
+  return `${chunkText.slice(0, SOURCE_EXCERPT_LENGTH).trimEnd()}…`;
+}
+
 function SourceCitation({
   source,
 }: {
   source: NonNullable<ConversationMessage["sources"]>[number];
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const excerpt = excerptChunkText(source.chunk_text);
 
   return (
     <div className="rounded-xl border border-primary/15 bg-white/80 p-2">
@@ -121,11 +131,9 @@ function SourceCitation({
         <FileText className="h-4 w-4 shrink-0" />
         <span>{source.title}</span>
       </Button>
-      {isExpanded ? (
-        <p className="px-2 pb-1 pt-2 text-sm leading-6 text-slate-600">
-          {source.chunk_text}
-        </p>
-      ) : null}
+      <p className="px-2 pb-1 pt-2 text-sm leading-6 text-slate-600">
+        {isExpanded ? source.chunk_text : excerpt}
+      </p>
     </div>
   );
 }
