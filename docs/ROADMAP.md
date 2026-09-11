@@ -33,7 +33,7 @@
 - Интерфейс администратора для загрузки/удаления/реиндексации документов БЗ (Word, PDF, HTML, Markdown). Правка метаданных через PATCH не сделана.
 - Просмотр истории диалогов. Агрегат метрик считает `GET /api/metrics`; дашборд `/` и `/analytics` показывают три метрики из этого API. Grafana — перспектива, не сделана.
 - Демо-канал — публичный веб-виджет. Вебхук Bitrix и почта Redmine не сделаны.
-- Черновик оператора в нашей консоли (`draft` / `auto`, см. `OPERATOR_ASSIST_MODE`) — имитация сценария 2 ТЗ, не подписка на чужой чат Bitrix.
+- Черновик оператора в нашей консоли (`draft` / `auto` / `agent`, см. `OPERATOR_ASSIST_MODE`) — имитация сценария 2 ТЗ, не подписка на чужой чат Bitrix.
 - **Авторизация сотрудников** — на стороне Next.js через **Auth.js** (NextAuth v5), пользователи в **Prisma** (см. п. 3.1, 3.4).
 - **Настройки панели** — порог и режим эскалации через `GET`/`PUT /api/settings` (runtime поверх env).
 
@@ -114,7 +114,7 @@
 ### 1.2. Реализуемые задачи
 
 - Настройка **Docker Compose**: Postgres (pgvector), Redis, FastAPI, Next.js (`web`).
-- Файл **`.env`** в корне (шаблон `.env.example`): `GIGACHAT_API_KEY`, `GIGACHAT_API_URL`, `DATABASE_URL`, `REDIS_URL`, `CONFIDENCE_THRESHOLD` (0.8), `TOP_K` (5), `MAX_CHUNK_SIZE` (180), `CHUNK_OVERLAP` (40), `OPERATOR_ASSIST_MODE` (`draft`|`auto`), `AUTH_SECRET`, `AUTH_DATABASE_URL`, `INTERNAL_SERVICE_TOKEN` (Next.js → FastAPI).
+- Файл **`.env`** в корне (шаблон `.env.example`): `GIGACHAT_API_KEY`, `GIGACHAT_API_URL`, `DATABASE_URL`, `REDIS_URL`, `CONFIDENCE_THRESHOLD` (0.8), `TOP_K` (5), `MAX_CHUNK_SIZE` (180), `CHUNK_OVERLAP` (40), `OPERATOR_ASSIST_MODE` (`draft`|`auto`|`agent`), `AUTH_SECRET`, `AUTH_DATABASE_URL`, `INTERNAL_SERVICE_TOKEN` (Next.js → FastAPI).
 - Инициализация **Alembic** и миграции доменных моделей.
 - **Prisma** в `frontend/` (`prisma migrate` в схему `auth`).
 - Определение **единого контракта** для `POST /chat`:

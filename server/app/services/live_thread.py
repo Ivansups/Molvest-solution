@@ -65,7 +65,9 @@ async def process_live_thread_event(
             if conversation is not None and await should_draft_followup(
                 session, conversation
             ):
-                return await _process_draft(session, event, installation_id)
+                return await _process_draft(
+                    session, event, installation_id, conversation=conversation
+                )
     return await _process_auto(session, event, installation_id)
 
 
@@ -112,14 +114,17 @@ async def _process_draft(
     session: AsyncSession,
     event: BitrixWebhookEvent,
     installation_id: UUID,
+    *,
+    conversation: Conversation | None = None,
 ) -> BitrixWebhookResponse:
     """Черновик оператору: retrieve + generate, ответ пользователю не уходит."""
-    conversation = await _get_or_create_thread(
-        session,
-        installation_id=installation_id,
-        thread_id=event.thread_id,
-        user_id=event.user_id or _DEFAULT_USER,
-    )
+    if conversation is None:
+        conversation = await _get_or_create_thread(
+            session,
+            installation_id=installation_id,
+            thread_id=event.thread_id,
+            user_id=event.user_id or _DEFAULT_USER,
+        )
     session.add(
         add_user_message(
             conversation,

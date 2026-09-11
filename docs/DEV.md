@@ -40,7 +40,7 @@ make install        # uv sync + pnpm install
 | `DATABASE_URL` | да для Docker | хост **`db`** — имя сервиса Compose |
 | `POSTGRES_USER` / `PASSWORD` / `DB` | да | должны совпадать с URL |
 | `CONFIDENCE_THRESHOLD` | нет | порог эскалации, по умолчанию `0.8` |
-| `OPERATOR_ASSIST_MODE` | нет | `draft` (по умолчанию) или `auto` |
+| `OPERATOR_ASSIST_MODE` | нет | `draft` (по умолчанию), `auto` или `agent` — см. [OPS.md](OPS.md#порог-и-режимы) |
 | `INTERNAL_SERVICE_TOKEN` | нет | Next.js → FastAPI; пусто — backend не проверяет |
 | `API_INTERNAL_URL` | нет | в Compose у `web` всегда `http://api:8000` |
 | `AUTH_SECRET` | да для входа в UI | подпись JWT-куки Auth.js; шаблон заполнен |

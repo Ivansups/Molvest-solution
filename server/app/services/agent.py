@@ -81,15 +81,6 @@ def apply_operator_reply_policy(
             suggested_response=answer or None,
             fill_draft_after_commit=False,
         )
-    if mode == "agent" and graph_escalated:
-        return GuestReplyDecision(
-            escalated=True,
-            guest_text=GUEST_ESCALATION_TEXT,
-            persist_sources=[],
-            escalation_reason=graph_escalation_reason or None,
-            suggested_response=None,
-            fill_draft_after_commit=intent != "handoff",
-        )
     if graph_escalated:
         return GuestReplyDecision(
             escalated=True,
@@ -97,7 +88,7 @@ def apply_operator_reply_policy(
             persist_sources=[],
             escalation_reason=graph_escalation_reason or None,
             suggested_response=None,
-            fill_draft_after_commit=False,
+            fill_draft_after_commit=mode == "agent" and intent != "handoff",
         )
     return GuestReplyDecision(
         escalated=False,

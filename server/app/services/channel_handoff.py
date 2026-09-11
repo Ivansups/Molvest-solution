@@ -123,10 +123,6 @@ async def escalate_if_agent_still_open(
         return
     if conversation.status != ConversationStatus.OPEN:
         return
-    await session.flush()
-    await session.refresh(conversation, with_for_update=True)
-    if conversation.status != ConversationStatus.OPEN:
-        return
     system = add_assistant_message(
         conversation,
         content=GUEST_ESCALATION_TEXT,
