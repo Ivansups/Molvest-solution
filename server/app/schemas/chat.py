@@ -22,6 +22,7 @@ class ChatRequest(BaseModel):
     text: str | None = None
     image_base64: str | None = None
     user_id: str
+    force_handoff: bool = False
 
 
 class ChatResponse(BaseModel):

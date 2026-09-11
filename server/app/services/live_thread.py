@@ -17,6 +17,7 @@ from app.models.message import Message
 from app.rag.retrieval import workspace_to_installation_id
 from app.schemas.chat import ChatRequest
 from app.services.agent import ConversationConflictError, run_chat_turn
+from app.services.channel_handoff import should_draft_followup
 from app.services.conversations import add_user_message
 from app.services.draft import generate_draft
 from app.services.runtime_settings import get_effective_operator_assist_mode
@@ -47,9 +48,21 @@ async def process_live_thread_event(
     if event.sender == "operator":
         return await _process_operator(session, event, installation_id)
 
-    if get_effective_operator_assist_mode() == "draft":
+    mode = get_effective_operator_assist_mode()
+    if mode == "draft":
         return await _process_draft(session, event, installation_id)
-
+    if mode == "agent":
+        mapping = await _find_mapping(
+            session,
+            installation_id=installation_id,
+            thread_id=event.thread_id,
+        )
+        if mapping is not None:
+            conversation = await session.get(Conversation, mapping.conversation_id)
+            if conversation is not None and await should_draft_followup(
+                session, conversation
+            ):
+                return await _process_draft(session, event, installation_id)
     return await _process_auto(session, event, installation_id)
 
 

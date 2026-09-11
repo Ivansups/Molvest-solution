@@ -54,6 +54,37 @@ async def test_put_settings_and_readback(settings_client: AsyncClient) -> None:
     assert get.json()["confidence_threshold"] == pytest.approx(0.9)
 
 
+async def test_put_settings_accepts_agent_mode(
+    settings_client: AsyncClient,
+) -> None:
+    put = await settings_client.put(
+        "/api/settings",
+        json={"confidence_threshold": 0.8, "operator_assist_mode": "agent"},
+    )
+    assert put.status_code == 200
+    assert put.json()["operator_assist_mode"] == "agent"
+
+    get = await settings_client.get("/api/settings")
+    assert get.status_code == 200
+    assert get.json()["operator_assist_mode"] == "agent"
+
+
+async def test_put_settings_rejects_unknown_assist_mode(
+    settings_client: AsyncClient,
+) -> None:
+    before = (await settings_client.get("/api/settings")).json()
+    response = await settings_client.put(
+        "/api/settings",
+        json={
+            "confidence_threshold": 0.8,
+            "operator_assist_mode": "require_operator_confirm",
+        },
+    )
+    assert response.status_code == 422
+    after = (await settings_client.get("/api/settings")).json()
+    assert after == before
+
+
 async def test_put_settings_rejects_invalid_threshold(
     settings_client: AsyncClient,
 ) -> None:

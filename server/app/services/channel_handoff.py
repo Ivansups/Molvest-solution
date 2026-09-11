@@ -1,7 +1,7 @@
-"""Черновик оператору после канальной эскалации и follow-up в draft.
+"""Черновик оператору после канальной эскалации и follow-up в draft/agent.
 
-Виджетный POST /chat не вызывает эти функции: там первая эскалация
-по-прежнему без generate (operator-assist).
+Виджет в draft первую эскалацию не заполняет; в agent — вызывает
+fill_escalation_draft после commit, если черновик ещё пуст.
 """
 
 import logging
@@ -33,6 +33,12 @@ async def fill_escalation_draft(
     conversation = await session.get(Conversation, conversation_id)
     if conversation is None:
         return None
+    if conversation.suggested_response:
+        logger.info(
+            "черновик уже есть, generate не вызываем conversation_id=%s",
+            conversation.id,
+        )
+        return conversation.suggested_response
     text = (query or "").strip() or IMAGE_HOLD_TEXT
     return await _save_draft(
         session,
@@ -48,8 +54,8 @@ async def persist_draft_followup(
     conversation: Conversation,
     user_text: str | None,
     user_image: str | None,
-    channel: str,
-    channel_message_id: str,
+    channel: str | None = None,
+    channel_message_id: str | None = None,
 ) -> str | None:
     """Реплика гостя в draft после оператора: лента + черновик, без автоответа."""
     await persist_guest_hold(
@@ -78,8 +84,8 @@ async def should_draft_followup(
     session: AsyncSession,
     conversation: Conversation,
 ) -> bool:
-    """True, если гость уже у оператора и режим draft — не автоответ."""
-    if get_effective_operator_assist_mode() != "draft":
+    """True, если гость уже у оператора и режим draft/agent — не автоответ."""
+    if get_effective_operator_assist_mode() not in ("draft", "agent"):
         return False
     if conversation.status == ConversationStatus.ESCALATED:
         return True

@@ -177,6 +177,7 @@ async def persist_turn(
     escalated: bool,
     sources: list[Source],
     escalation_reason: str | None = None,
+    suggested_response: str | None = None,
     user_created_at: datetime | None = None,
     channel: str | None = None,
     channel_message_id: str | None = None,
@@ -215,6 +216,8 @@ async def persist_turn(
             assistant_message=assistant,
             reason=reason,
         )
+    if suggested_response is not None:
+        conversation.suggested_response = suggested_response
     await session.commit()
     logger.info(
         "ход записан conversation_id=%s escalated=%s",

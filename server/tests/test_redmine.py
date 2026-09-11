@@ -427,3 +427,49 @@ async def test_poll_mailbox_ingests_each_message(
     count = await poll_mailbox()
     assert count == 2
     assert calls == ["m1", "m2"]
+
+
+async def test_agent_mode_high_score_does_not_note_guest(
+    api_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: MonkeyPatch,
+    llm_mock: object,
+    app_settings: Settings,
+    cache_mocks: object,
+    fake_redmine: _FakeRedmineClient,
+) -> None:
+    runtime_settings.update_effective_settings(
+        confidence_threshold=0.8,
+        operator_assist_mode="agent",
+    )
+    _patch_auto_graph(monkeypatch, llm_mock, app_settings, answer="Ответ в тикет")
+    response = await api_client.post(PATH, json=_payload())
+    assert response.status_code == 200
+    body = response.json()
+    assert body["escalated"] is True
+    fake_redmine.add_note.assert_not_awaited()
+    conversation = await db_session.get(Conversation, UUID(body["conversation_id"]))
+    assert conversation is not None
+    assert conversation.status == ConversationStatus.ESCALATED
+    assert conversation.suggested_response == "Ответ в тикет"
+
+
+async def test_agent_mode_duplicate_message_twice(
+    api_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: MonkeyPatch,
+    llm_mock: object,
+    app_settings: Settings,
+    cache_mocks: object,
+    fake_redmine: _FakeRedmineClient,
+) -> None:
+    runtime_settings.update_effective_settings(
+        confidence_threshold=0.8,
+        operator_assist_mode="agent",
+    )
+    _patch_auto_graph(monkeypatch, llm_mock, app_settings)
+    first = await api_client.post(PATH, json=_payload())
+    second = await api_client.post(PATH, json=_payload())
+    assert first.json()["status"] == "processed"
+    assert second.json()["status"] == "duplicate"
+    fake_redmine.add_note.assert_not_awaited()

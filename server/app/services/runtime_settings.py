@@ -4,7 +4,7 @@ from typing import Literal
 
 from app.core.config import settings
 
-AssistMode = Literal["draft", "auto"]
+AssistMode = Literal["draft", "auto", "agent"]
 
 _override_threshold: float | None = None
 _override_assist_mode: AssistMode | None = None

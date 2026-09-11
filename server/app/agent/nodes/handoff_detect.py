@@ -27,6 +27,14 @@ async def handoff_detect(
     OpenRouter — основной классификатор. Пустой ключ или сбой OpenRouter —
     тот же YES/NO через GigaChat-2 (Lite). Сбой обоих — эскалация, не RAG.
     """
+    if state.get("force_handoff"):
+        logger.info("handoff_detect force_handoff без классификатора")
+        return {
+            "intent": "handoff",
+            "escalated": True,
+            "escalation_reason": HANDOFF_ESCALATION_REASON,
+        }
+
     query = (state.get("query") or "").strip()
     if not query:
         return {}

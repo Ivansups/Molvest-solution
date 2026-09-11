@@ -1,6 +1,7 @@
 """Запуск диалогового графа для одного сообщения чата с персистом диалога."""
 
 import logging
+from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,13 +14,23 @@ from app.models.time import utc_now
 from app.rag.retrieval import workspace_to_installation_id
 from app.schemas.chat import ChatRequest, ChatResponse, Source
 from app.selectors.conversations import list_recent_messages
+from app.services.channel_handoff import (
+    fill_escalation_draft,
+    persist_draft_followup,
+)
 from app.services.conversations import (
     GUEST_ESCALATION_TEXT,
     IMAGE_HOLD_TEXT,
     persist_guest_hold,
     persist_turn,
 )
-from app.services.runtime_settings import get_effective_operator_assist_mode
+from app.services.runtime_settings import (
+    AssistMode,
+    get_effective_operator_assist_mode,
+)
+
+# Причина эскалации, когда режим agent удерживает готовый ответ ИИ.
+AGENT_HOLD_REASON = "Режим agent: ответ ИИ ждёт подтверждения оператора"
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +43,68 @@ class ConversationConflictError(Exception):
     def __init__(self, detail: str) -> None:
         self.detail = detail
         super().__init__(detail)
+
+
+@dataclass(frozen=True)
+class GuestReplyDecision:
+    """Что отдать гостю и что записать после графа."""
+
+    escalated: bool
+    guest_text: str
+    persist_sources: list[Source]
+    escalation_reason: str | None
+    suggested_response: str | None
+    fill_draft_after_commit: bool
+
+
+def apply_operator_reply_policy(
+    *,
+    mode: AssistMode,
+    intent: str,
+    graph_escalated: bool,
+    answer: str,
+    sources: list[Source],
+    graph_escalation_reason: str,
+) -> GuestReplyDecision:
+    """Шлюз выдачи: слать гостю, эскалировать или удержать ответ в черновике.
+
+    Роутеры и канальные адаптеры не ветвят режим — смотрят `escalated`.
+    """
+    if mode == "agent" and answer and not graph_escalated and intent != "empty":
+        return GuestReplyDecision(
+            escalated=True,
+            guest_text=GUEST_ESCALATION_TEXT,
+            persist_sources=[],
+            escalation_reason=AGENT_HOLD_REASON,
+            suggested_response=answer,
+            fill_draft_after_commit=False,
+        )
+    if mode == "agent" and graph_escalated:
+        return GuestReplyDecision(
+            escalated=True,
+            guest_text=GUEST_ESCALATION_TEXT,
+            persist_sources=[],
+            escalation_reason=graph_escalation_reason or None,
+            suggested_response=None,
+            fill_draft_after_commit=intent != "handoff",
+        )
+    if graph_escalated:
+        return GuestReplyDecision(
+            escalated=True,
+            guest_text=GUEST_ESCALATION_TEXT,
+            persist_sources=[],
+            escalation_reason=graph_escalation_reason or None,
+            suggested_response=None,
+            fill_draft_after_commit=False,
+        )
+    return GuestReplyDecision(
+        escalated=False,
+        guest_text=answer,
+        persist_sources=sources,
+        escalation_reason=None,
+        suggested_response=None,
+        fill_draft_after_commit=False,
+    )
 
 
 async def run_chat_turn(
@@ -51,10 +124,11 @@ async def run_chat_turn(
     )
     if existing is not None and existing.status == ConversationStatus.RESOLVED:
         raise ConversationConflictError("Диалог уже закрыт")
+    mode = get_effective_operator_assist_mode()
     if (
         existing is not None
         and existing.status == ConversationStatus.ESCALATED
-        and get_effective_operator_assist_mode() == "draft"
+        and mode == "draft"
     ):
         await persist_guest_hold(
             session,
@@ -67,6 +141,31 @@ async def run_chat_turn(
         )
         logger.info(
             "draft hold conversation_id=%s без графа",
+            existing.id,
+        )
+        return ChatResponse(
+            conversation_id=existing.id,
+            message_id=request.message_id,
+            text=GUEST_ESCALATION_TEXT,
+            confidence=0.0,
+            escalated=True,
+            sources=[],
+        )
+    if (
+        existing is not None
+        and existing.status == ConversationStatus.ESCALATED
+        and mode == "agent"
+    ):
+        await persist_draft_followup(
+            session,
+            conversation=existing,
+            user_text=_hold_user_text(request),
+            user_image=None,
+            channel=channel,
+            channel_message_id=channel_message_id,
+        )
+        logger.info(
+            "agent follow-up conversation_id=%s черновик без ответа гостю",
             existing.id,
         )
         return ChatResponse(
@@ -105,14 +204,14 @@ async def run_chat_turn(
         raise ConversationConflictError("Диалог уже закрыт")
 
     sources = _to_sources(final.get("chunks") or [])
-    escalated = bool(final.get("escalated", False))
+    graph_escalated = bool(final.get("escalated", False))
     confidence = float(final.get("confidence", 0.0))
     answer = final.get("answer") or ""
     user_text = _user_content(request, final)
     if (
         existing is not None
         and existing.status == ConversationStatus.ESCALATED
-        and escalated
+        and graph_escalated
     ):
         await persist_guest_hold(
             session,
@@ -132,8 +231,14 @@ async def run_chat_turn(
             sources=[],
         )
 
-    text = GUEST_ESCALATION_TEXT if escalated else answer
-    persist_sources = [] if escalated else sources
+    decision = apply_operator_reply_policy(
+        mode=get_effective_operator_assist_mode(),
+        intent=str(final.get("intent") or ""),
+        graph_escalated=graph_escalated,
+        answer=answer,
+        sources=sources,
+        graph_escalation_reason=str(final.get("escalation_reason") or ""),
+    )
 
     persisted = await persist_turn(
         session,
@@ -142,23 +247,30 @@ async def run_chat_turn(
         user_id=request.user_id,
         user_text=user_text,
         user_image=None,
-        assistant_content=text,
+        assistant_content=decision.guest_text,
         confidence=confidence,
-        escalated=escalated,
-        sources=persist_sources,
-        escalation_reason=final.get("escalation_reason") or None,
+        escalated=decision.escalated,
+        sources=decision.persist_sources,
+        escalation_reason=decision.escalation_reason,
+        suggested_response=decision.suggested_response,
         user_created_at=turn_started_at,
         channel=channel,
         channel_message_id=channel_message_id,
     )
+    if decision.fill_draft_after_commit:
+        await fill_escalation_draft(
+            session,
+            conversation_id=persisted.conversation.id,
+            query=user_text,
+        )
 
     return ChatResponse(
         conversation_id=persisted.conversation.id,
         message_id=request.message_id,
-        text=text,
+        text=decision.guest_text,
         confidence=confidence,
-        escalated=escalated,
-        sources=persist_sources,
+        escalated=decision.escalated,
+        sources=decision.persist_sources,
     )
 
 
@@ -225,6 +337,7 @@ def _initial_state(
         "confidence": 0.0,
         "escalated": False,
         "escalation_reason": "",
+        "force_handoff": bool(request.force_handoff),
     }
 
 

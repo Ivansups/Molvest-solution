@@ -36,3 +36,4 @@ class AgentState(TypedDict, total=False):
     confidence: float
     escalated: bool
     escalation_reason: str
+    force_handoff: bool

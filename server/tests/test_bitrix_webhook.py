@@ -593,3 +593,65 @@ async def test_resolved_thread_returns_409(
         ),
     )
     assert operator.status_code == 409
+
+
+async def test_agent_mode_high_score_holds_draft_without_guest_reply(
+    api_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: MonkeyPatch,
+    llm_mock: MagicMock,
+    app_settings: Settings,
+    cache_mocks: None,
+) -> None:
+    runtime_settings.update_effective_settings(
+        confidence_threshold=0.8,
+        operator_assist_mode="agent",
+    )
+    _patch_auto_graph(monkeypatch, llm_mock, app_settings, answer="Ответ в авто")
+    response = await api_client.post(
+        PATH, json=_payload(thread_id="t-agent", message_id="m-agent")
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["escalated"] is True
+    assert body["reply"] is None
+    conversation = await db_session.get(Conversation, UUID(body["conversation_id"]))
+    assert conversation is not None
+    assert conversation.status == ConversationStatus.ESCALATED
+    assert conversation.suggested_response == "Ответ в авто"
+    assistants = list(
+        (
+            await db_session.scalars(
+                select(Message).where(
+                    Message.conversation_id == conversation.id,
+                    Message.role == MessageRole.ASSISTANT,
+                )
+            )
+        ).all()
+    )
+    assert assistants == []
+
+
+async def test_agent_mode_duplicate_event_is_idempotent(
+    api_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: MonkeyPatch,
+    llm_mock: MagicMock,
+    app_settings: Settings,
+    cache_mocks: None,
+) -> None:
+    runtime_settings.update_effective_settings(
+        confidence_threshold=0.8,
+        operator_assist_mode="agent",
+    )
+    calls: list[int] = [0]
+    _patch_auto_graph(monkeypatch, llm_mock, app_settings, calls=calls)
+    first = await api_client.post(
+        PATH, json=_payload(thread_id="t-dup", message_id="m-dup")
+    )
+    second = await api_client.post(
+        PATH, json=_payload(thread_id="t-dup", message_id="m-dup")
+    )
+    assert first.json()["status"] == "processed"
+    assert second.json()["status"] == "duplicate"
+    assert calls[0] == 1
