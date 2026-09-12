@@ -18,7 +18,6 @@ import {
 import { ApiStateCard } from "@/src/components/common/api-state-card";
 import { FileDropzone } from "@/src/components/common/file-dropzone";
 import { ConversationThread } from "@/src/components/common/conversation-thread";
-import { GuestHistoryList } from "@/src/components/common/guest-history-list";
 import { OperatorAssistPanel } from "@/src/components/common/operator-assist-panel";
 import { ResolveConfirmationDialog } from "@/src/components/common/resolve-confirmation-dialog";
 import { Badge } from "@/src/components/ui/badge";
@@ -217,10 +216,8 @@ export function ChatPage({
   const [draft, setDraft] = useState("");
   const {
     conversationId: guestConversationId,
-    history: guestHistory,
     setConversationId: setGuestConversationId,
     resetConversation,
-    rememberConversation,
     forgetConversation,
   } = useConversation();
   const guestSessionGeneration = useRef(0);
@@ -517,18 +514,6 @@ export function ChatPage({
   );
 
   useEffect(() => {
-    if (isSupportMode || !conversation) {
-      return;
-    }
-    rememberConversation({
-      id: conversation.id,
-      preview: conversation.lastMessage,
-      status: conversation.status,
-      updatedAt: conversation.lastMessageAt,
-    });
-  }, [conversation, isSupportMode, rememberConversation]);
-
-  useEffect(() => {
     if (isSupportMode || !guestConversationId) {
       return;
     }
@@ -557,19 +542,11 @@ export function ChatPage({
     resetConversation();
   };
 
-  const handleOpenGuestConversation = (conversationId: string): void => {
-    if (conversationId === guestConversationId) {
-      return;
-    }
-    beginGuestSession();
-    setGuestConversationId(conversationId);
-  };
-
   if (!isSupportMode) {
     return (
       <>
         <Card className="shell-panel reveal-item reveal-delay-4 overflow-hidden rounded-[30px]">
-          <CardContent className="grid gap-0 p-0 xl:grid-cols-[minmax(0,1fr)_minmax(260px,320px)]">
+          <CardContent className="p-0">
             <div className="flex h-[640px] min-h-0 flex-col">
               <div className="flex shrink-0 flex-wrap items-start justify-between gap-4 border-b border-border/60 px-6 py-5">
                 <div>
@@ -735,15 +712,6 @@ export function ChatPage({
                 )}
               </div>
             </div>
-            <aside className="flex min-h-0 flex-col border-t border-border/60 bg-slate-50/70 p-5 xl:h-[640px] xl:border-l xl:border-t-0">
-              <GuestHistoryList
-                className="min-h-0 flex-1"
-                items={guestHistory}
-                activeId={guestConversationId}
-                onSelect={handleOpenGuestConversation}
-                onNew={handleNewGuestConversation}
-              />
-            </aside>
           </CardContent>
         </Card>
         <Dialog open={imageDialogOpen} onOpenChange={setImageDialogOpen}>
