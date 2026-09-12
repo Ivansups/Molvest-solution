@@ -1,6 +1,6 @@
 ## Purpose
 
-Orchestrate guest support turns: classify only empty vs. non-empty without GigaChat, detect an explicit handoff to a human, then cache or retrieve and generate for every real question — no canned template ever substitutes for a model call.
+Orchestrate guest support turns: classify only empty vs. non-empty without GigaChat, route each turn with a lightweight LLM (intake router), then cache or retrieve and generate on GigaChat for every real support question — greetings, away checks, off-topic, and explicit handoffs are answered or escalated by the router before RAG.
 
 ## Requirements
 
