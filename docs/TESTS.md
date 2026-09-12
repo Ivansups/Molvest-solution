@@ -45,6 +45,7 @@ cd server && uv run pytest
 | `test_rag.py` | частично | чанкинг/HTML/MD без БД; индекс, атомарный reindex, размер вектора, retrieve, FAILED — с БД |
 | `test_conversations_api.py` | да | список/фильтры/изоляция installation; детали; 404; метрики (% автоответов, эскалации) |
 | `test_operator_api.py` | да | ответ оператора, 409 на open, resolve идемпотентный, suggest пишет только черновик |
+| `test_redmine.py` | да | `POST /webhook/redmine`: токен 403, 422, маппинг тикета, дубль, эскалация без заметки, оператор без графа, пустой исходящий (`delivered=false`), IMAP опционален |
 
 `conftest.py`: движок Postgres, skip без БД, `api_client` с подменой сессии, общий `llm_mock`.
 

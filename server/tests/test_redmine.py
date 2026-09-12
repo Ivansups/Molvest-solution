@@ -117,13 +117,41 @@ async def test_invalid_token_is_403(
     api_client: AsyncClient, monkeypatch: MonkeyPatch
 ) -> None:
     monkeypatch.setattr(settings, "internal_service_token", TOKEN)
-    response = await api_client.post(PATH, json=_payload())
-    assert response.status_code == 403
+    missing = await api_client.post(PATH, json=_payload())
+    assert missing.status_code == 403
+    wrong = await api_client.post(
+        PATH,
+        json=_payload(),
+        headers={"X-Internal-Token": "nope"},
+    )
+    assert wrong.status_code == 403
 
 
 async def test_malformed_body_is_422(api_client: AsyncClient) -> None:
     response = await api_client.post(PATH, json={"ticket_id": "1"})
     assert response.status_code == 422
+
+
+async def test_empty_outbound_returns_reply_not_delivered(
+    api_client: AsyncClient,
+    monkeypatch: MonkeyPatch,
+    llm_mock: object,
+    app_settings: Settings,
+    cache_mocks: object,
+) -> None:
+    runtime_settings.update_effective_settings(
+        confidence_threshold=0.8,
+        operator_assist_mode="auto",
+    )
+    _patch_auto_graph(monkeypatch, llm_mock, app_settings)
+    monkeypatch.setattr("app.services.redmine.build_redmine_client", lambda: None)
+    response = await api_client.post(PATH, json=_payload(message_id="no-out"))
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "processed"
+    assert body["reply"] == "Ответ в тикет"
+    assert body["delivered"] is False
+    assert body["escalated"] is False
 
 
 async def test_first_ticket_creates_conversation_and_sends_note(
