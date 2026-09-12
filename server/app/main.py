@@ -32,11 +32,15 @@ logger = logging.getLogger(__name__)
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Предупреждает, если API слушает без служебного токена."""
     from app.channels.redmine.imap import run_imap_poller
+    from app.db.session import SessionLocal
+    from app.services.runtime_settings import load_persisted_settings
 
     if not settings.internal_service_token:
         logger.warning(
             "INTERNAL_SERVICE_TOKEN пуст: служебные маршруты открыты без токена"
         )
+    async with SessionLocal() as session:
+        await load_persisted_settings(session)
     poller: asyncio.Task[None] | None = None
     if settings.redmine_imap_host:
         poller = asyncio.create_task(run_imap_poller())

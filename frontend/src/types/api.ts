@@ -107,10 +107,19 @@ export interface ConversationListOut {
   total: number;
 }
 
+export interface MetricsDailyPoint {
+  date: string;
+  conversation_count: number;
+  escalation_count: number;
+}
+
 export interface ConversationMetrics {
   auto_answer_percent: number;
   avg_response_time_seconds: number;
   escalation_count: number;
+  answer_count: number;
+  auto_answer_count: number;
+  daily: MetricsDailyPoint[];
 }
 
 export type OperatorAssistMode = "draft" | "auto" | "agent";

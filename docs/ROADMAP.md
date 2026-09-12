@@ -333,6 +333,17 @@ GigaChat Vision — мультимодальная модель: принима�
 ### 4.2. Реализуемый функционал
 
 - **Аутентификация**: `/login` (Auth.js credentials), консоль `(console)` закрыта редиректом в layout.
+  Демо-учётки заведены сидом `frontend/prisma/seed.ts` (список — `DEMO_USERS`
+  в `frontend/src/lib/auth-user.ts`), пароль у обеих — `password123`:
+
+  | Email | Пароль | Роль |
+  | --- | --- | --- |
+  | `admin@molvest.ru` | `password123` | admin — Екатерина Романова |
+  | `operator@molvest.ru` | `password123` | operator — Анна Лебедева |
+
+  В Docker (`make up`) сид накатывается автоматически при старте
+  `frontend/scripts/entrypoint.sh` (`prisma migrate deploy` + `prisma db seed`).
+  Локально без Docker — вручную: `pnpm --dir frontend prisma:seed`.
 - **Страница документов** (`/knowledge-base`):
   - Список (название, тип, статус, дата загрузки).
   - Загрузка файла и названия.

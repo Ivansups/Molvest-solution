@@ -220,8 +220,13 @@ async def test_metrics_returns_auto_answer_percent_and_count(
     # 2 ассистентских/system ответа всего, 1 из них эскалирован → 50% автоответов
     assert body["auto_answer_percent"] == 50.0
     assert body["escalation_count"] == 1
+    assert body["answer_count"] == 2
+    assert body["auto_answer_count"] == 1
     # среднее (2с + 4с) / 2
     assert body["avg_response_time_seconds"] == 3.0
+    assert len(body["daily"]) == 1
+    assert body["daily"][0]["conversation_count"] == 2
+    assert body["daily"][0]["escalation_count"] == 1
 
 
 async def test_metrics_empty_installation_is_zero(
@@ -234,3 +239,6 @@ async def test_metrics_empty_installation_is_zero(
     assert body["auto_answer_percent"] == 0.0
     assert body["escalation_count"] == 0
     assert body["avg_response_time_seconds"] == 0.0
+    assert body["answer_count"] == 0
+    assert body["auto_answer_count"] == 0
+    assert body["daily"] == []

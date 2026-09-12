@@ -1,17 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import {
   clearGuestConversationId,
+  forgetGuestConversation,
   readGuestConversationId,
   writeGuestConversationId,
 } from "@/src/lib/guest-session";
 
-/** Сохраняет id гостевого диалога в sessionStorage и localStorage. */
+/** Текущий гостевой диалог: id, сохранённый в этом браузере. */
 export function useConversation(): {
   conversationId: string | null;
   setConversationId: (conversationId: string) => void;
   resetConversation: () => void;
+  forgetConversation: (conversationId: string) => void;
 } {
   const [conversationId, setConversationIdState] = useState<string | null>(
     () => readGuestConversationId(),
@@ -27,5 +29,15 @@ export function useConversation(): {
     setConversationIdState(null);
   };
 
-  return { conversationId, setConversationId, resetConversation };
+  const forgetConversation = useCallback((id: string): void => {
+    forgetGuestConversation(id);
+    setConversationIdState((current) => (current === id ? null : current));
+  }, []);
+
+  return {
+    conversationId,
+    setConversationId,
+    resetConversation,
+    forgetConversation,
+  };
 }

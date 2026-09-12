@@ -42,6 +42,13 @@ export function clearGuestConversationId(): void {
   window.localStorage.removeItem(GUEST_CONVERSATION_KEY);
 }
 
+/** Гостевой конверсейшн-id сброшен: сигнал сбросить локальный кэш, если он совпадает. */
+export function forgetGuestConversation(conversationId: string): void {
+  if (readGuestConversationId() === conversationId) {
+    clearGuestConversationId();
+  }
+}
+
 /** Ответ относится к уже сброшенному гостевому сеансу. */
 export function isStaleGuestGeneration(
   requestGeneration: number,

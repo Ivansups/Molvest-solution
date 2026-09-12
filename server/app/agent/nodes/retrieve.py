@@ -18,14 +18,17 @@ async def retrieve(
     chunks = await retriever(state)
     confidence = max((c["score"] for c in chunks), default=0.0)
     threshold = get_effective_confidence_threshold()
+    # Скриншот уже разобран Vision: слабый поиск не должен прятать ответ.
+    escalate = confidence < threshold and not state.get("image_base64")
     logger.info(
-        "retrieve chunks=%s confidence=%s escalated=%s",
+        "retrieve chunks=%s confidence=%s image=%s escalated=%s",
         len(chunks),
         confidence,
-        confidence < threshold,
+        bool(state.get("image_base64")),
+        escalate,
     )
     return {
         "chunks": chunks,
         "confidence": confidence,
-        "escalated": confidence < threshold,
+        "escalated": escalate,
     }

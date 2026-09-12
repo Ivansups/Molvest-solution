@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     gigachat_model: str = "GigaChat-2"
     # Lite для детекта хэндоффа, если OpenRouter недоступен. В API Lite = GigaChat-2.
     gigachat_classify_model: str = "GigaChat-2"
+    # GigaChat-2 картинки не принимает (422 "Model does not support image") —
+    # нужна модель линейки Pro/Max с поддержкой vision.
+    gigachat_vision_model: str = "GigaChat-2-Pro"
     # Имя модели POST /embeddings. Смена на другую размерность
     # (EmbeddingsGigaR = 2560) требует миграции колонки chunks.embedding.
     gigachat_embeddings_model: str = "Embeddings"

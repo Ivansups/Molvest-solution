@@ -6,10 +6,12 @@ from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.nodes.retrieve import retrieve
 from app.agent.state import AgentState, RetrievedChunk
 from app.core.config import settings
+from app.db.session import get_session
 from app.main import app
 from app.services import runtime_settings
 
@@ -22,11 +24,17 @@ def _reset_runtime_settings() -> Iterator[None]:
 
 
 @pytest.fixture
-async def settings_client() -> AsyncIterator[AsyncClient]:
-    """Клиент без Postgres: /api/settings не трогает БД."""
+async def settings_client(db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
+    """PUT пишет override в Postgres — переживает рестарт процесса API."""
+
+    async def override_session() -> AsyncIterator[AsyncSession]:
+        yield db_session
+
+    app.dependency_overrides[get_session] = override_session
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
+    app.dependency_overrides.clear()
 
 
 async def test_get_settings_defaults(settings_client: AsyncClient) -> None:
@@ -35,6 +43,23 @@ async def test_get_settings_defaults(settings_client: AsyncClient) -> None:
     body = response.json()
     assert body["confidence_threshold"] == pytest.approx(settings.confidence_threshold)
     assert body["operator_assist_mode"] == settings.operator_assist_mode
+
+
+async def test_put_settings_survives_process_restart(
+    settings_client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """PUT пишет в Postgres — рестарт процесса не должен откатывать override."""
+    put = await settings_client.put(
+        "/api/settings",
+        json={"confidence_threshold": 0.93, "operator_assist_mode": "agent"},
+    )
+    assert put.status_code == 200
+
+    runtime_settings.reset_effective_settings()  # имитирует новый процесс API
+    await runtime_settings.load_persisted_settings(db_session)
+
+    assert runtime_settings.get_effective_confidence_threshold() == pytest.approx(0.93)
+    assert runtime_settings.get_effective_operator_assist_mode() == "agent"
 
 
 async def test_put_settings_and_readback(settings_client: AsyncClient) -> None:

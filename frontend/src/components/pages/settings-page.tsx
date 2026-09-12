@@ -8,23 +8,42 @@ import { z } from "zod";
 import { ApiStateCard } from "@/src/components/common/api-state-card";
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent } from "@/src/components/ui/card";
-import { Label } from "@/src/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/src/components/ui/select";
 import { Slider } from "@/src/components/ui/slider";
 import { Spinner } from "@/src/components/ui/spinner";
 import { useToast } from "@/src/hooks/use-toast";
+import { cn } from "@/src/lib/utils";
 import { settingsService } from "@/src/services/settings-service";
+import type { OperatorAssistMode } from "@/src/types/api";
 
 const schema = z.object({
   confidence_threshold: z.number().min(0.5).max(0.99),
   operator_assist_mode: z.enum(["draft", "auto", "agent"]),
 });
+
+const ASSIST_MODES: {
+  value: OperatorAssistMode;
+  label: string;
+  description: string;
+}[] = [
+  {
+    value: "draft",
+    label: "Черновик",
+    description:
+      "Если уверен — отвечает гостю сразу; после эскалации — только черновик оператору.",
+  },
+  {
+    value: "auto",
+    label: "Авто",
+    description:
+      "Если уверен — отвечает гостю сразу; после эскалации тоже может ответить сам.",
+  },
+  {
+    value: "agent",
+    label: "Агент",
+    description:
+      "ИИ никогда не пишет в чат гостя, пока оператор не нажмёт «Отправить».",
+  },
+];
 
 type FormValues = z.infer<typeof schema>;
 
@@ -139,31 +158,45 @@ export function SettingsPage() {
                 )}
               />
             </div>
-            <div className="grid gap-2">
-              <Label>Режим помощи оператору</Label>
+            <div className="rounded-xl border border-border p-4">
+              <p className="font-medium text-secondary">Режим помощи оператору</p>
+              <p className="mt-1 text-sm text-slate-500">
+                Кто отвечает гостю: бот, черновик оператору или только после
+                «Отправить».
+              </p>
               <Controller
                 control={form.control}
                 name="operator_assist_mode"
                 render={({ field }) => (
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Режим" />
-                    </SelectTrigger>
-                    <SelectContent className="max-w-[min(36rem,calc(100vw-2rem))]">
-                      <SelectItem value="auto" className="whitespace-normal">
-                        Если уверен — отвечает гостю сразу; после эскалации тоже
-                        может ответить сам
-                      </SelectItem>
-                      <SelectItem value="draft" className="whitespace-normal">
-                        Если уверен — отвечает гостю сразу; после эскалации —
-                        только черновик оператору
-                      </SelectItem>
-                      <SelectItem value="agent" className="whitespace-normal">
-                        ИИ никогда не пишет в чат гостя, пока оператор не нажмёт
-                        Отправить
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <div
+                    role="radiogroup"
+                    aria-label="Режим помощи оператору"
+                    className="mt-4 grid gap-3 md:grid-cols-3"
+                  >
+                    {ASSIST_MODES.map((mode) => {
+                      const selected = field.value === mode.value;
+                      return (
+                        <button
+                          key={mode.value}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          onClick={() => field.onChange(mode.value)}
+                          className={cn(
+                            "rounded-xl border p-4 text-left transition-colors",
+                            selected
+                              ? "border-primary bg-primary/10"
+                              : "border-border bg-white hover:border-primary/40",
+                          )}
+                        >
+                          <p className="font-medium text-secondary">{mode.label}</p>
+                          <p className="mt-1 text-sm text-slate-500">
+                            {mode.description}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
                 )}
               />
             </div>

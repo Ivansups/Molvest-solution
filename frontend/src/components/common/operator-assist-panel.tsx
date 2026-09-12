@@ -1,7 +1,9 @@
+import { FormattedMarkdown } from "@/src/components/common/formatted-markdown";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 import { Button } from "@/src/components/ui/button";
 import { Separator } from "@/src/components/ui/separator";
 import { Spinner } from "@/src/components/ui/spinner";
+import { cn } from "@/src/lib/utils";
 import type { ConversationDetail } from "@/src/types/domain";
 
 export function OperatorAssistPanel({
@@ -27,11 +29,15 @@ export function OperatorAssistPanel({
 }) {
   const draft = conversation.suggestedResponse.trim();
   const escalated = conversation.status === "escalated";
+  const resolved = conversation.status === "resolved";
   const busy = generatePending || resolvePending || sendPending;
   return (
-    <Card className="h-full">
+    <Card className={cn("h-full", resolved && "resolved-thread")}>
       <CardHeader className="border-b border-border/60 pb-4">
         <CardTitle>Панель оператора</CardTitle>
+        {resolved ? (
+          <p className="mt-2 text-sm text-slate-500">Диалог закрыт</p>
+        ) : null}
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="rounded-[22px] bg-slate-50/80 p-4">
@@ -50,9 +56,13 @@ export function OperatorAssistPanel({
               Агент готовит черновик
             </div>
           ) : null}
-          <p className="mt-2 text-sm leading-6 text-slate-500">
-            {draft || "Черновик пуст. Нажмите «Сгенерировать ответ», когда будете готовы."}
-          </p>
+          {draft ? (
+            <FormattedMarkdown className="mt-2">{draft}</FormattedMarkdown>
+          ) : (
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              Черновик пуст. Нажмите «Сгенерировать ответ», когда будете готовы.
+            </p>
+          )}
         </div>
         <div className="flex flex-col gap-2">
           <Button
@@ -74,7 +84,7 @@ export function OperatorAssistPanel({
               variant="outline"
               className="flex-1"
               onClick={onEditDraft}
-              disabled={!draft || busy}
+              disabled={!draft || busy || !escalated}
             >
               Редактировать
             </Button>

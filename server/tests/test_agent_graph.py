@@ -187,6 +187,39 @@ async def test_vision_enriches_query_then_classifies(
     assert "что это?" in result["query"]
 
 
+async def test_vision_low_score_still_generates(
+    llm_mock: MagicMock, app_settings: Settings
+) -> None:
+    """Скриншот без попадания в БЗ — всё равно отвечаем по описанию Vision."""
+    llm_mock.chat_with_vision = AsyncMock(return_value="Интерфейс Telegram")
+    llm_mock.generate = AsyncMock(return_value="На скрине Telegram, не ошибка 1С.")
+    graph = build_graph(
+        llm_mock,
+        app_settings,
+        retriever=_empty_retriever,
+        handoff_classifier=_classifier(handoff=False),
+    )
+    result = await graph.ainvoke(_state(text="что видишь?", image_base64="AAA"))
+    assert result["escalated"] is False
+    assert result["answer"] == "На скрине Telegram, не ошибка 1С."
+    assert "Интерфейс Telegram" in result["query"]
+    llm_mock.generate.assert_awaited_once()
+    llm_mock.classify_handoff.assert_not_awaited()
+
+
+async def test_handoff_detect_uses_guest_text_not_vision_dump() -> None:
+    classifier = _classifier(handoff=False)
+    llm = _llm()
+    dump = "что видишь?\n\nОписание скриншота:\nCHAMPIONSHIP чат с Женей"
+    result = await handoff_detect(
+        {"text": "что видишь?", "query": dump},
+        classifier=classifier,
+        llm=llm,
+    )
+    assert result == {}
+    classifier.is_handoff_request.assert_awaited_once_with("что видишь?")
+
+
 async def test_classify_rules() -> None:
     assert (await classify({"query": "привет!"}))["intent"] == "support"
     assert (await classify({"query": "спасибо"}))["intent"] == "support"
@@ -425,6 +458,58 @@ async def test_run_chat_turn_maps_contract_and_persists(
     assert escalation is not None
     assert escalation.escalated_to
     assert conversation.suggested_response is None
+
+
+async def test_run_chat_turn_vision_keeps_guest_text(
+    monkeypatch: pytest.MonkeyPatch,
+    chat_request: ChatRequest,
+    llm_mock: MagicMock,
+    app_settings: Settings,
+    reset_graph_singleton: None,
+    cache_mocks: tuple[AsyncMock, AsyncMock],
+    db_session: AsyncSession,
+) -> None:
+    """Скриншот: гость видит ответ, в ленте его текст, не дамп Vision."""
+    from sqlalchemy import select
+
+    import app.services.agent as agent_service
+    from app.core.config import settings
+    from app.models.conversation import Conversation
+    from app.models.enums import ConversationStatus, MessageRole
+    from app.models.message import Message
+
+    monkeypatch.setattr(settings, "operator_assist_mode", "auto")
+    llm_mock.chat_with_vision = AsyncMock(return_value="Интерфейс Telegram")
+    llm_mock.generate = AsyncMock(return_value="На скрине Telegram, не ошибка 1С.")
+    graph = build_graph(
+        llm_mock,
+        app_settings,
+        retriever=_empty_retriever,
+        handoff_classifier=_classifier(handoff=False),
+    )
+    monkeypatch.setattr(agent_service, "get_graph", lambda: graph)
+    request = chat_request.model_copy(
+        update={"text": "что видишь?", "image_base64": "AAA"}
+    )
+    response = await run_chat_turn(request, db_session)
+    assert response.escalated is False
+    assert response.text == "На скрине Telegram, не ошибка 1С."
+
+    conversation = await db_session.get(Conversation, response.conversation_id)
+    assert conversation is not None
+    assert conversation.status == ConversationStatus.OPEN
+
+    user_rows = list(
+        (
+            await db_session.scalars(
+                select(Message).where(
+                    Message.conversation_id == response.conversation_id,
+                    Message.role == MessageRole.USER,
+                )
+            )
+        ).all()
+    )
+    assert user_rows[0].content == "что видишь?"
 
 
 async def test_run_chat_turn_replay_does_not_double_escalate(
