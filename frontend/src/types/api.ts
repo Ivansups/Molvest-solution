@@ -127,5 +127,9 @@ export type OperatorAssistMode = "draft" | "auto" | "agent";
 export interface AgentSettings {
   confidence_threshold: number;
   operator_assist_mode: OperatorAssistMode;
+  escalate_on_detector_failure: boolean;
+  escalate_on_low_rag: boolean;
+  skip_low_rag_on_image: boolean;
+  escalate_on_guest_handoff: boolean;
 }
 

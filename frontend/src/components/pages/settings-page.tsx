@@ -10,6 +10,7 @@ import { Button } from "@/src/components/ui/button";
 import { Card, CardContent } from "@/src/components/ui/card";
 import { Slider } from "@/src/components/ui/slider";
 import { Spinner } from "@/src/components/ui/spinner";
+import { Switch } from "@/src/components/ui/switch";
 import { useToast } from "@/src/hooks/use-toast";
 import { cn } from "@/src/lib/utils";
 import { settingsService } from "@/src/services/settings-service";
@@ -18,7 +19,46 @@ import type { OperatorAssistMode } from "@/src/types/api";
 const schema = z.object({
   confidence_threshold: z.number().min(0.5).max(0.99),
   operator_assist_mode: z.enum(["draft", "auto", "agent"]),
+  escalate_on_detector_failure: z.boolean(),
+  escalate_on_low_rag: z.boolean(),
+  skip_low_rag_on_image: z.boolean(),
+  escalate_on_guest_handoff: z.boolean(),
 });
+
+const ESCALATION_RULES: {
+  name:
+    | "escalate_on_detector_failure"
+    | "escalate_on_low_rag"
+    | "skip_low_rag_on_image"
+    | "escalate_on_guest_handoff";
+  label: string;
+  description: string;
+}[] = [
+  {
+    name: "escalate_on_low_rag",
+    label: "Слабый поиск в базе",
+    description:
+      "Если в базе нет подходящих фрагментов или уверенность ниже порога — передать оператору.",
+  },
+  {
+    name: "skip_low_rag_on_image",
+    label: "Не эскалировать скриншот при слабом поиске",
+    description:
+      "По скриншоту 1С всё равно ответить, даже если база не нашла похожий фрагмент.",
+  },
+  {
+    name: "escalate_on_guest_handoff",
+    label: "Просьба гостя позвать оператора",
+    description:
+      "Фразы вроде «позовите оператора» сразу передают диалог человеку.",
+  },
+  {
+    name: "escalate_on_detector_failure",
+    label: "Сбой классификатора",
+    description:
+      "Если не удалось понять запрос (сбой моделей) — безопаснее передать оператору, чем отвечать наугад.",
+  },
+];
 
 const ASSIST_MODES: {
   value: OperatorAssistMode;
@@ -60,6 +100,10 @@ export function SettingsPage() {
     defaultValues: {
       confidence_threshold: 0.8,
       operator_assist_mode: "draft",
+      escalate_on_detector_failure: true,
+      escalate_on_low_rag: true,
+      skip_low_rag_on_image: true,
+      escalate_on_guest_handoff: true,
     },
   });
   const confidenceThreshold = useWatch({
@@ -75,6 +119,10 @@ export function SettingsPage() {
     form.reset({
       confidence_threshold: data.confidence_threshold,
       operator_assist_mode: data.operator_assist_mode,
+      escalate_on_detector_failure: data.escalate_on_detector_failure,
+      escalate_on_low_rag: data.escalate_on_low_rag,
+      skip_low_rag_on_image: data.skip_low_rag_on_image,
+      escalate_on_guest_handoff: data.escalate_on_guest_handoff,
     });
   }, [form, settingsQuery.data]);
 
@@ -85,7 +133,7 @@ export function SettingsPage() {
       await queryClient.invalidateQueries({ queryKey: ["settings"] });
       toast({
         title: "Настройки сохранены",
-        description: "Порог и режим эскалации применены без рестарта API.",
+        description: "Порог, режим и правила эскалации применены без рестарта API.",
       });
     },
     onError: (error) => {
@@ -108,7 +156,7 @@ export function SettingsPage() {
     return (
       <ApiStateCard
         title="Настройки недоступны"
-        description="Сервер не отдал GET /api/settings. Порог и режим пока только в env."
+        description="Сервер не отдал GET /api/settings. Порог, режим и правила пока только в env."
         detail={
           settingsQuery.error instanceof Error
             ? settingsQuery.error.message
@@ -127,8 +175,8 @@ export function SettingsPage() {
       <div>
         <h1 className="text-3xl font-semibold text-secondary">Настройки</h1>
         <p className="mt-2 text-slate-500">
-          Порог уверенности и режим помощи оператору. Остальное — через переменные
-          окружения.
+          Порог уверенности, режим помощи оператору и сценарии эскалации.
+          Секреты каналов и модели — только в переменных окружения.
         </p>
       </div>
       <Card>
@@ -199,6 +247,36 @@ export function SettingsPage() {
                   </div>
                 )}
               />
+            </div>
+            <div className="rounded-xl border border-border p-4">
+              <p className="font-medium text-secondary">Правила эскалации</p>
+              <p className="mt-1 text-sm text-slate-500">
+                Когда передавать вопрос оператору, кроме порога уверенности.
+              </p>
+              <div className="mt-4 space-y-4">
+                {ESCALATION_RULES.map((rule) => (
+                  <Controller
+                    key={rule.name}
+                    control={form.control}
+                    name={rule.name}
+                    render={({ field }) => (
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="font-medium text-secondary">{rule.label}</p>
+                          <p className="mt-1 text-sm text-slate-500">
+                            {rule.description}
+                          </p>
+                        </div>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                          aria-label={rule.label}
+                        />
+                      </div>
+                    )}
+                  />
+                ))}
+              </div>
             </div>
             <div className="flex justify-end">
               <Button type="submit" disabled={mutation.isPending}>
