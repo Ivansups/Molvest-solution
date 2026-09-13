@@ -29,16 +29,20 @@ async def index_document(
     llm: EmbeddingsProvider,
     *,
     app_settings: Settings | None = None,
+    chunks: list[str] | None = None,
 ) -> Document:
     """Строит чанки документа и атомарно заменяет ими старые.
 
     Сначала внешний вызов эмбеддингов, затем транзакция удаления+вставки —
-    чтобы retrieval не видел документ наполовину обновлённым.
+    чтобы retrieval не видел документ наполовину обновлённым. `chunks` —
+    готовые чанки синтезированного содержимого (кейс диалога): тогда файл
+    на диске не читается.
     """
     cfg = app_settings or settings
     logger.info("индексация начата document_id=%s", document.id)
     try:
-        chunks = await _build_chunks(document, cfg)
+        if chunks is None:
+            chunks = await _build_chunks(document, cfg)
         embeddings = await llm.get_embeddings(chunks)
         ensure_embedding_dimensions(embeddings)
     except Exception as exc:
