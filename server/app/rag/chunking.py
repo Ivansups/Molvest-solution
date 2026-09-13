@@ -3,6 +3,7 @@
 import io
 import logging
 import re
+import struct
 
 from app.models.enums import FileType
 
@@ -91,6 +92,8 @@ def extract_text(data: bytes, file_type: FileType) -> str:
         return _extract_pdf(data)
     if file_type == FileType.DOCX:
         return _extract_docx(data)
+    if file_type == FileType.DOC:
+        return _extract_doc(data)
     raise ValueError(f"неподдерживаемый тип файла: {file_type}")
 
 
@@ -106,6 +109,81 @@ def _extract_docx(data: bytes) -> str:
 
     document = docx.Document(io.BytesIO(data))
     return "\n".join(paragraph.text for paragraph in document.paragraphs)
+
+
+_DOC_CONVERT_HINT = (
+    "не удалось извлечь текст из .doc (Word 97–2003). "
+    "Сохраните файл как .docx и загрузите снова"
+)
+_WORD_MAGIC = 0xA5EC
+_FIB_FLAGS = 0x0A
+_FIB_FC_MIN = 0x18
+_FIB_FC_MAC = 0x1C
+_FIB_ENCRYPTED = 0x0100
+
+
+def _extract_doc(data: bytes) -> str:
+    """Текст из OLE Word 97–2003. Иначе понятная ошибка — конвертировать в DOCX."""
+    import olefile  # type: ignore[import-untyped]
+
+    buffer = io.BytesIO(data)
+    if not olefile.isOleFile(buffer):
+        raise ValueError(_DOC_CONVERT_HINT)
+    buffer.seek(0)
+    ole = olefile.OleFileIO(buffer)
+    try:
+        if not ole.exists("WordDocument"):
+            raise ValueError(_DOC_CONVERT_HINT)
+        word = ole.openstream("WordDocument").read()
+    finally:
+        ole.close()
+    if len(word) < 32 or struct.unpack_from("<H", word, 0)[0] != _WORD_MAGIC:
+        raise ValueError(_DOC_CONVERT_HINT)
+    flags = struct.unpack_from("<H", word, _FIB_FLAGS)[0]
+    if flags & _FIB_ENCRYPTED:
+        raise ValueError("зашифрованный .doc не поддерживается; сохраните как .docx")
+    fc_min = struct.unpack_from("<I", word, _FIB_FC_MIN)[0]
+    fc_mac = struct.unpack_from("<I", word, _FIB_FC_MAC)[0]
+    pieces: list[str] = []
+    if fc_min < fc_mac <= len(word):
+        decoded = _decode_doc_bytes(word[fc_min:fc_mac])
+        if decoded.strip():
+            pieces.append(decoded)
+    if not pieces:
+        utf16 = _utf16_runs(word)
+        if utf16.strip():
+            pieces.append(utf16)
+    text = "\n".join(part for part in pieces if part.strip())
+    if not text.strip():
+        raise ValueError(_DOC_CONVERT_HINT)
+    return text
+
+
+def _decode_doc_bytes(raw: bytes) -> str:
+    if len(raw) >= 2 and raw[1] == 0:
+        return raw.decode("utf-16-le", errors="replace")
+    return raw.decode("cp1251", errors="replace")
+
+
+def _utf16_runs(data: bytes, min_chars: int = 12) -> str:
+    runs: list[str] = []
+    index = 0
+    while index + 1 < len(data):
+        chars: list[str] = []
+        cursor = index
+        while cursor + 1 < len(data):
+            code = data[cursor] | (data[cursor + 1] << 8)
+            if 32 <= code < 0xD800 or code in (9, 10, 13):
+                chars.append(chr(code))
+                cursor += 2
+            else:
+                break
+        if len(chars) >= min_chars:
+            runs.append("".join(chars))
+            index = cursor
+        else:
+            index += 1
+    return "\n".join(runs)
 
 
 def extract_chunks(

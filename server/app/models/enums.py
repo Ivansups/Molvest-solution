@@ -18,6 +18,7 @@ def str_enum(enum_cls: type[StrEnum], *, length: int = 16) -> Enum:
 class FileType(StrEnum):
     PDF = "PDF"
     DOCX = "DOCX"
+    DOC = "DOC"
     HTML = "HTML"
     MD = "MD"
 

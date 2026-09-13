@@ -1,5 +1,6 @@
 """Интеграционные тесты индексации и ретривала RAG-пайплайна."""
 
+import io
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -8,6 +9,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import Settings
 from app.models.chunk import EMBEDDING_DIMENSIONS, Chunk
 from app.models.document import Document
 from app.models.enums import DocumentStatus, FileType
@@ -24,6 +26,7 @@ from app.rag.protocols import (
     ensure_embedding_dimensions,
 )
 from app.rag.retrieval import retrieve_chunks
+from app.services.local_ingest import ingest_local_file
 
 DIM = EMBEDDING_DIMENSIONS
 
@@ -126,6 +129,77 @@ def test_extract_text_strips_html_tags() -> None:
     text = extract_text("<p>Привет <b>1С</b></p>".encode(), FileType.HTML)
     assert "Привет" in text
     assert "<p>" not in text
+
+
+def _pdf_with_text(text: str) -> bytes:
+    """Настоящий PDF-1.4 с извлекаемой строкой, не заглушка %PDF."""
+    if any(ord(char) > 126 or char in "()\\" for char in text):
+        raise ValueError("в тестовом PDF только ASCII без скобок")
+    content = f"BT /F1 12 Tf 50 140 Td ({text}) Tj ET\n"
+    objects = [
+        "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+        "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+        (
+            "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] "
+            "/Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n"
+        ),
+        (
+            f"4 0 obj\n<< /Length {len(content)} >>\nstream\n"
+            f"{content}endstream\nendobj\n"
+        ),
+        "5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
+    ]
+    header = b"%PDF-1.4\n"
+    body = b""
+    offsets = [0]
+    position = len(header)
+    for obj in objects:
+        offsets.append(position)
+        encoded = obj.encode("latin-1")
+        body += encoded
+        position += len(encoded)
+    xref = [f"xref\n0 {len(offsets)}\n", "0000000000 65535 f \n"]
+    for offset in offsets[1:]:
+        xref.append(f"{offset:010d} 00000 n \n")
+    trailer = (
+        f"trailer\n<< /Size {len(offsets)} /Root 1 0 R >>\n"
+        f"startxref\n{position}\n%%EOF\n"
+    )
+    return header + body + "".join(xref).encode("latin-1") + trailer.encode("latin-1")
+
+
+def _docx_with_text(text: str) -> bytes:
+    """Настоящий DOCX через python-docx, не заглушка PK."""
+    import docx
+
+    document = docx.Document()
+    document.add_paragraph(text)
+    buffer = io.BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
+def test_extract_text_pdf_returns_readable_text() -> None:
+    phrase = "How to post a document in 1C"
+    data = _pdf_with_text(phrase)
+    assert data.startswith(b"%PDF-1.4")
+    assert b"xref" in data
+    text = extract_text(data, FileType.PDF)
+    assert phrase in text
+
+
+def test_extract_text_docx_returns_readable_text() -> None:
+    phrase = "Как провести документ в 1С"
+    data = _docx_with_text(phrase)
+    assert data[:2] == b"PK"
+    assert b"word/document.xml" in data
+    text = extract_text(data, FileType.DOCX)
+    assert phrase in text
+
+
+def test_extract_text_doc_rejects_non_ole() -> None:
+    with pytest.raises(ValueError, match="docx"):
+        extract_text(b"not a Word OLE document", FileType.DOC)
 
 
 # --- Ingestion + Retrieval (Postgres) ---
@@ -259,3 +333,39 @@ async def test_retrieve_empty_when_nothing_indexed(
         top_k=5,
     )
     assert results == []
+
+
+async def test_ingest_local_skips_duplicate_filename(
+    db_session: AsyncSession,
+    tmp_path: Path,
+    fake_llm: FakeEmbedder,
+) -> None:
+    path = tmp_path / "guide.md"
+    path.write_text("# Как провести документ в 1С\nТело", encoding="utf-8")
+    installation = uuid4()
+    cfg = Settings(
+        gigachat_api_key="test-key",
+        upload_dir=str(tmp_path / "uploads"),
+    )
+    first = await ingest_local_file(
+        db_session,
+        path,
+        installation_id=installation,
+        llm=fake_llm,
+        app_settings=cfg,
+    )
+    second = await ingest_local_file(
+        db_session,
+        path,
+        installation_id=installation,
+        llm=fake_llm,
+        app_settings=cfg,
+    )
+    assert first == "created"
+    assert second == "skipped"
+    count = await db_session.scalar(
+        select(func.count())
+        .select_from(Document)
+        .where(Document.installation_id == installation)
+    )
+    assert count == 1
