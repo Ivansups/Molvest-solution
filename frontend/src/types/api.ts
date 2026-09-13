@@ -122,6 +122,28 @@ export interface ConversationMetrics {
   daily: MetricsDailyPoint[];
 }
 
+export type LogEventType =
+  | "escalation"
+  | "conversation_resolved"
+  | "document_indexed"
+  | "document_failed";
+
+export interface LogEventOut {
+  id: string;
+  occurred_at: string;
+  event_type: LogEventType;
+  conversation_id: string | null;
+  document_id: string | null;
+  message: string;
+}
+
+export interface LogEventListOut {
+  items: LogEventOut[];
+  page: number;
+  page_size: number;
+  total: number;
+}
+
 export type OperatorAssistMode = "draft" | "auto" | "agent";
 
 export interface AgentSettings {
