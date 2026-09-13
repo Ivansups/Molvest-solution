@@ -89,6 +89,8 @@ class Settings(BaseSettings):
     redmine_smtp_user: str = ""
     redmine_smtp_password: str = ""
     redmine_smtp_from: str = ""
+    # --- Case learning: автоинжект решённых кейсов в БЗ ---
+    case_learning_enabled: bool = True
 
     @field_validator("gigachat_embeddings_model")
     @classmethod

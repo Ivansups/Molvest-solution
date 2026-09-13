@@ -5,8 +5,9 @@ from datetime import datetime
 from typing import Annotated, NoReturn
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 
+from app.core.config import settings
 from app.core.security import require_internal_token
 from app.db.session import SessionDep
 from app.models.enums import ConversationStatus
@@ -25,6 +26,7 @@ from app.schemas.conversations import (
 )
 from app.selectors import conversations as conversation_selectors
 from app.services.agent import ConversationConflictError
+from app.services.case_learning import evaluate_and_ingest
 from app.services.operator import (
     ConversationNotFoundError,
     ResolveNotConfirmedError,
@@ -158,10 +160,16 @@ async def add_operator_message_route(
 @router.post("/{conversation_id}/resolve")
 async def resolve_conversation_route(
     session: SessionDep,
+    background_tasks: BackgroundTasks,
     conversation_id: UUID,
     body: ResolveConversationIn,
 ) -> ConversationOut:
-    """Закрывает эскалированный диалог после confirmed=true."""
+    """Закрывает эскалированный диалог после confirmed=true.
+
+    На закрытом диалоге фоном запускается case learning: правила + малая LLM
+    отбирают кейс в базу знаний. Сбой фоновой задачи гостю и оператору не
+    виден — только в лог.
+    """
     logger.info(
         "resolve conversation_id=%s installation_id=%s confirmed=%s",
         conversation_id,
@@ -183,6 +191,11 @@ async def resolve_conversation_route(
         ) from None
     except (ConversationNotFoundError, ConversationConflictError) as exc:
         _raise_operator_http(exc)
+    if (
+        conversation.status == ConversationStatus.RESOLVED
+        and settings.case_learning_enabled
+    ):
+        background_tasks.add_task(evaluate_and_ingest, conversation.id)
     return conversation_to_out(conversation)
 
 

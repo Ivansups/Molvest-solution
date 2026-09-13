@@ -14,12 +14,13 @@ from typing import Literal, TypedDict
 
 import httpx
 
-from app.agent.prompts import ROUTER_SYSTEM_PROMPT
+from app.agent.prompts import CASE_EVALUATION_PROMPT, ROUTER_SYSTEM_PROMPT
 from app.core.config import Settings, settings
 
 logger = logging.getLogger(__name__)
 
 _ROUTER_MAX_TOKENS = 256
+_CASE_EVALUATION_MAX_TOKENS = 8
 
 # Коды, которые малая модель возвращает первой строкой.
 RouterIntent = Literal["greeting", "away", "offtopic", "handoff", "support"]
@@ -30,6 +31,9 @@ _ROUTER_INTENTS: dict[str, RouterIntent] = {
     "AWAY_CHECK": "away",
     "OFFTOPIC": "offtopic",
 }
+
+# Вердикт по паре «вопрос — ответ» при пополнении базы знаний кейсами.
+CaseEvaluation = Literal["good", "bad"]
 
 
 class RouterDecision(TypedDict):
@@ -63,6 +67,21 @@ def parse_router_decision(content: str) -> RouterDecision:
     return RouterDecision(intent=intent, reply=reply)
 
 
+def parse_case_evaluation(content: str) -> CaseEvaluation:
+    """Разбирает вердикт малой модели; всё, кроме точного GOOD/BAD, — ошибка.
+
+    Fail-closed: неоднозначный ответ поднимает OpenRouterError, чтобы кейс не
+    попал в базу знаний без явного подтверждения малой модели.
+    """
+    stripped = content.strip()
+    if re.fullmatch(r"GOOD", stripped, re.IGNORECASE):
+        return "good"
+    if re.fullmatch(r"BAD", stripped, re.IGNORECASE):
+        return "bad"
+    logger.warning("OpenRouter оценка кейса неоднозначна: %r", content)
+    raise OpenRouterError(f"Неожиданный вердикт кейса: {content!r}")
+
+
 class OpenRouterClassifier:
     """Intake-роутер на лёгкой модели OpenRouter."""
 
@@ -85,6 +104,15 @@ class OpenRouterClassifier:
         """Классифицирует запрос и возвращает маршрут + короткий шаблон."""
         content = await self._complete(ROUTER_SYSTEM_PROMPT, text, _ROUTER_MAX_TOKENS)
         return parse_router_decision(content)
+
+    async def evaluate_case(self, question: str, answer: str) -> CaseEvaluation:
+        """Оценивает пару «вопрос — ответ» на пригодность для базы знаний."""
+        content = await self._complete(
+            CASE_EVALUATION_PROMPT,
+            f"Вопрос: {question}\n\nОтвет: {answer}",
+            _CASE_EVALUATION_MAX_TOKENS,
+        )
+        return parse_case_evaluation(content)
 
     def is_configured(self) -> bool:
         """Правда, если задан ключ — без него классификатор не вызываем."""

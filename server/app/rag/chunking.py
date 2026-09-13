@@ -95,7 +95,7 @@ def _split_until_fits(text: str, token_limit: int) -> list[str]:
 
 def extract_text(data: bytes, file_type: FileType) -> str:
     """Возвращает плоский текст документа по его типу."""
-    if file_type == FileType.MD:
+    if file_type in (FileType.MD, FileType.KB_CASE):
         return data.decode("utf-8", errors="replace")
     if file_type == FileType.HTML:
         html = data.decode("utf-8", errors="replace")

@@ -21,6 +21,7 @@ class FileType(StrEnum):
     DOC = "DOC"
     HTML = "HTML"
     MD = "MD"
+    KB_CASE = "KB_CASE"
 
 
 class DocumentStatus(StrEnum):

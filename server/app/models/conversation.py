@@ -56,6 +56,12 @@ class Conversation(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    # Метка обработки кейса case learning: не None — диалог уже разобран
+    # (GOOD/BAD/правила), повторно инжестить нечего.
+    case_ingested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
     messages: Mapped[list["Message"]] = relationship(
         back_populates="conversation",
