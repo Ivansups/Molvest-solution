@@ -1,6 +1,9 @@
 overrides:
   # GHSA / Dependabot #3: stack exhaustion merging recursive object graphs.
   deepmerge-ts: '>=8.0.0'
+  # GHSA / Dependabot #1: AsyncLocalStorage context lost/contaminated inside
+  # Effect fibers under concurrent load with RPC.
+  effect: '>=3.20.0'
 
 allowBuilds:
   '@prisma/client': true
