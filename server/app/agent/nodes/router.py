@@ -26,6 +26,7 @@ from app.core.openrouter_client import (
     OpenRouterError,
     RouterDecision,
 )
+from app.services.runtime_settings import get_effective_settings
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +64,8 @@ async def route_intent(
     """Маршрутизирует запрос: handoff/оффтоп/приветствие или поддержка.
 
     OpenRouter — основной intake-фильтр. Пустой ключ или сбой — правила, затем
-    GigaChat Lite для хэндоффа. Сбой всех путей — эскалация, не RAG.
+    GigaChat Lite для хэндоффа. Сбой всех путей — эскалация (если правило
+    включено), иначе идём в support/RAG.
     """
     if state.get("force_handoff"):
         logger.info("route_intent force_handoff без классификатора")
@@ -82,15 +84,24 @@ async def route_intent(
     try:
         decision = await _route(guest_text, classifier=classifier, llm=llm)
     except _RouterFailure:
-        logger.warning("route_intent оба классификатора упали, эскалация")
-        return {
-            "intent": "handoff",
-            "escalated": True,
-            "escalation_reason": DETECTOR_FAILURE_REASON,
-        }
+        if get_effective_settings().escalate_on_detector_failure:
+            logger.warning("route_intent оба классификатора упали, эскалация")
+            return {
+                "intent": "handoff",
+                "escalated": True,
+                "escalation_reason": DETECTOR_FAILURE_REASON,
+            }
+        logger.warning("route_intent оба классификатора упали, идём в support")
+        return {}
 
     intent = decision["intent"]
     if intent == "handoff":
+        if not get_effective_settings().escalate_on_guest_handoff:
+            logger.info(
+                "route_intent хэндофф выключен, support query=%s",
+                preview(guest_text),
+            )
+            return {}
         logger.info("route_intent запрос хэндоффа query=%s", preview(guest_text))
         return {
             "intent": "handoff",
