@@ -4,6 +4,9 @@ overrides:
   # GHSA / Dependabot #1: AsyncLocalStorage context lost/contaminated inside
   # Effect fibers under concurrent load with RPC.
   effect: '>=3.20.0'
+  # GHSA / Dependabot #2: record() issue paths can make flatten() throw for
+  # inherited Object property names.
+  valibot: '>=1.4.2'
 
 allowBuilds:
   '@prisma/client': true

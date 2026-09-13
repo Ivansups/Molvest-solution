@@ -7,6 +7,7 @@ settings:
 overrides:
   deepmerge-ts: '>=8.0.0'
   effect: '>=3.20.0'
+  valibot: '>=1.4.2'
 
 importers:
 
@@ -17,7 +18,7 @@ importers:
         version: 2.11.3(@prisma/client@6.16.2(prisma@6.16.2(typescript@5.9.3))(typescript@5.9.3))
       '@hookform/resolvers':
         specifier: ^5.9.1
-        version: 5.9.1(@standard-schema/spec@1.1.0)(arktype@2.2.3)(effect@3.22.2)(react-hook-form@7.87.0(react@19.2.8))(typanion@3.14.0)(valibot@1.2.0(typescript@5.9.3))(zod@4.5.4)
+        version: 5.9.1(@standard-schema/spec@1.1.0)(arktype@2.2.3)(effect@3.22.2)(react-hook-form@7.87.0(react@19.2.8))(typanion@3.14.0)(zod@4.5.4)
       '@prisma/client':
         specifier: ^6.16.2
         version: 6.16.2(prisma@6.16.2(typescript@5.9.3))(typescript@5.9.3)
@@ -501,7 +502,7 @@ packages:
       react-hook-form: ^7.55.0
       superstruct: '>=0.12.0'
       typanion: ^3.3.2
-      valibot: '>=0.31.0 || ^1.0.0-beta.4 || ^1.0.0-rc'
+      valibot: '>=1.4.2'
       vest: '>=6.0.0'
       yup: ^1.0.0
       zod: ^3.25.0 || ^4.0.0
@@ -3783,14 +3784,6 @@ packages:
     peerDependencies:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
-  valibot@1.2.0:
-    resolution: {integrity: sha512-mm1rxUsmOxzrwnX5arGS+U4T25RdvpPjPN4yR0u9pUBov9+zGVtO84tif1eY4r6zWxVxu3KzIyknJy3rxfRZZg==}
-    peerDependencies:
-      typescript: '>=5'
-    peerDependenciesMeta:
-      typescript:
-        optional: true
-
   vfile-message@4.0.3:
     resolution: {integrity: sha512-QTHzsGd1EhbZs4AsQ20JX1rC3cOlt/IWJruk893DfLRr57lcnOeMaWG4K0JrRta4mIJZKth2Au3mM3u03/JWKw==}
 
@@ -4237,7 +4230,7 @@ snapshots:
 
   '@floating-ui/utils@0.2.12': {}
 
-  '@hookform/resolvers@5.9.1(@standard-schema/spec@1.1.0)(arktype@2.2.3)(effect@3.22.2)(react-hook-form@7.87.0(react@19.2.8))(typanion@3.14.0)(valibot@1.2.0(typescript@5.9.3))(zod@4.5.4)':
+  '@hookform/resolvers@5.9.1(@standard-schema/spec@1.1.0)(arktype@2.2.3)(effect@3.22.2)(react-hook-form@7.87.0(react@19.2.8))(typanion@3.14.0)(zod@4.5.4)':
     dependencies:
       '@standard-schema/utils': 0.3.0
       react-hook-form: 7.87.0(react@19.2.8)
@@ -4246,7 +4239,6 @@ snapshots:
       arktype: 2.2.3
       effect: 3.22.2
       typanion: 3.14.0
-      valibot: 1.2.0(typescript@5.9.3)
       zod: 4.5.4
 
   '@humanfs/core@0.19.2':
@@ -7746,11 +7738,6 @@ snapshots:
   use-sync-external-store@1.6.0(react@19.2.8):
     dependencies:
       react: 19.2.8
-
-  valibot@1.2.0(typescript@5.9.3):
-    optionalDependencies:
-      typescript: 5.9.3
-    optional: true
 
   vfile-message@4.0.3:
     dependencies:
