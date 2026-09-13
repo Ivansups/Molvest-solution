@@ -6,12 +6,12 @@ Operator assist behind the support console: draft, auto, and agent assist modes,
 
 ### Requirement: Assist mode is a single config value
 
-The system SHALL read operator assist mode from one effective configuration value with allowed values `draft`, `auto`, or `agent`. The default SHALL be `draft` (from environment `OPERATOR_ASSIST_MODE` when no runtime override is set). The setting SHALL NOT be hardcoded in graph nodes or UI. Admins SHALL be able to change the effective value through `PUT /api/settings`; the guest dialog path SHALL honor the effective value on subsequent turns without an API restart. The system SHALL NOT introduce a separate `require_operator_confirm` flag. Allowed value `agent` is the settings identifier for hold-every-reply until operator Send; it is not the LangGraph agent. Existing stored or env values `draft` and `auto` SHALL keep their previous meaning: `auto` may auto-answer the guest when confidence is at or above the threshold even after escalation; `draft` auto-answers only while the conversation is `open` and holds after escalation.
+The system SHALL read operator assist mode from one effective configuration value with allowed values `draft`, `auto`, or `agent`. The default SHALL be `auto` (from environment `OPERATOR_ASSIST_MODE` when no runtime override is set). The setting SHALL NOT be hardcoded in graph nodes or UI. Admins SHALL be able to change the effective value through `PUT /api/settings`; the guest dialog path SHALL honor the effective value on subsequent turns without an API restart. The system SHALL NOT introduce a separate `require_operator_confirm` flag. Allowed value `agent` is the settings identifier for hold-every-reply until operator Send; it is not the LangGraph agent. Existing stored or env values `draft` and `auto` SHALL keep their previous meaning: `auto` may auto-answer the guest when confidence is at or above the threshold even after escalation; `draft` auto-answers only while the conversation is `open` and holds after escalation.
 
-#### Scenario: Default is draft
+#### Scenario: Default is auto
 
 - **WHEN** the setting is unset and no runtime override exists
-- **THEN** the system treats assist mode as `draft`
+- **THEN** the system treats assist mode as `auto`
 
 #### Scenario: Auto is honored
 

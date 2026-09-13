@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     internal_service_token: str = ""
     # draft — ответ гостю пока open; auto — и после эскалации;
     # agent — сырой ответ ИИ только после «Отправить» оператора.
-    operator_assist_mode: Literal["draft", "auto", "agent"] = "draft"
+    operator_assist_mode: Literal["draft", "auto", "agent"] = "auto"
     # --- Bitrix24: канал сценария 1 (открытые линии) ---
     bitrix_portal_url: str = ""
     bitrix_app_user_id: str = ""
