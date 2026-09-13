@@ -11,24 +11,35 @@ logger = logging.getLogger(__name__)
 
 _WORD_RE = re.compile(r"\S+")
 _TAG_RE = re.compile(r"<[^>]+>")
+# script/style — не контент, а код/CSS: сам тег TAG_RE вырежет, а вот текст
+# внутри него без этого попадёт в чанки и собьёт оценку токенов (длинные
+# "слова" без пробелов — минифицированный JS).
+_SCRIPT_STYLE_RE = re.compile(
+    r"<(script|style)\b[^>]*>.*?</\1>", re.IGNORECASE | re.DOTALL
+)
 
 # Окно GigaChat Embeddings — 512 токенов (в ответе API бывает max 514).
 EMBEDDING_TOKEN_LIMIT = 512
 _TOKEN_MARGIN = 40
 _CHARS_PER_TOKEN = 3
-_TOKENS_PER_WORD = 2
+# Прогон реальной документации 1С показал реальное соотношение до ~10
+# токенов/слово на плотном техническом русском тексте (числа, термины) —
+# прежние 2 и даже 8 систематически занижали оценку и не спасали от
+# 413 Tokens limit exceeded. Берём с запасом.
+_TOKENS_PER_WORD = 14
 
 
 def estimate_tokens(text: str) -> int:
-    """Грубая оценка токенов без токенизатора Сбера.
+    """Консервативная оценка токенов без токенизатора Сбера.
 
-    Для обычного текста — по словам (у 512 слов API вернул ~900 токенов).
-    По символам — только слипшийся кусок без пробелов (типичный сбой pypdf).
+    Берём максимум из оценки по словам и по символам — так не проваливаемся
+    ни на обычном тексте с длинными терминами, ни на слипшемся куске без
+    пробелов (типичный сбой pypdf).
     """
     words = _WORD_RE.findall(text)
-    if len(words) <= 1:
-        return (len(text) + _CHARS_PER_TOKEN - 1) // _CHARS_PER_TOKEN
-    return len(words) * _TOKENS_PER_WORD
+    word_estimate = len(words) * _TOKENS_PER_WORD
+    char_estimate = (len(text) + _CHARS_PER_TOKEN - 1) // _CHARS_PER_TOKEN
+    return max(word_estimate, char_estimate)
 
 
 def chunk_text(
@@ -87,7 +98,9 @@ def extract_text(data: bytes, file_type: FileType) -> str:
     if file_type == FileType.MD:
         return data.decode("utf-8", errors="replace")
     if file_type == FileType.HTML:
-        return _TAG_RE.sub(" ", data.decode("utf-8", errors="replace"))
+        html = data.decode("utf-8", errors="replace")
+        html = _SCRIPT_STYLE_RE.sub(" ", html)
+        return _TAG_RE.sub(" ", html)
     if file_type == FileType.PDF:
         return _extract_pdf(data)
     if file_type == FileType.DOCX:
