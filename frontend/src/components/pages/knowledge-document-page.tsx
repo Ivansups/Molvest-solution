@@ -30,7 +30,7 @@ import {
 import { Spinner } from "@/src/components/ui/spinner";
 import { Textarea } from "@/src/components/ui/textarea";
 import { useToast } from "@/src/hooks/use-toast";
-import { getDocumentPollingInterval } from "@/src/lib/document-polling";
+import { getDocumentPollingInterval, watchDocument } from "@/src/lib/document-polling";
 import { documentService } from "@/src/services/document-service";
 
 const schema = z.object({
@@ -104,6 +104,28 @@ export function KnowledgeDocumentPage() {
     onError: (error) =>
       toast({
         title: "Не удалось сохранить",
+        description: error instanceof Error ? error.message : "Проверьте backend.",
+        variant: "destructive",
+      }),
+  });
+
+  const replaceFileMutation = useMutation({
+    mutationFn: (file: File) =>
+      documentService.replaceDocumentFile(docId ?? "", file),
+    onSuccess: async (_result, file) => {
+      setVersionFileName(file.name);
+      setVersionDialogOpen(false);
+      watchDocument(docId ?? "");
+      await queryClient.invalidateQueries({ queryKey: ["document", docId] });
+      await queryClient.invalidateQueries({ queryKey: ["documents"] });
+      toast({
+        title: "Новая версия загружена",
+        description: "Файл поставлен в очередь индексации.",
+      });
+    },
+    onError: (error) =>
+      toast({
+        title: "Не удалось загрузить версию",
         description: error instanceof Error ? error.message : "Проверьте backend.",
         variant: "destructive",
       }),
@@ -242,7 +264,7 @@ export function KnowledgeDocumentPage() {
           <DialogHeader>
             <DialogTitle>Новая версия документа</DialogTitle>
             <DialogDescription>
-              Файл будет использован для следующей переиндексации.
+              Новый файл заменит текущий и будет проиндексирован.
             </DialogDescription>
           </DialogHeader>
           <FileDropzone
@@ -250,16 +272,20 @@ export function KnowledgeDocumentPage() {
               "application/pdf": [".pdf"],
               "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
                 [".docx"],
+              "text/markdown": [".md"],
+              "text/html": [".html"],
             }}
             description="Выберите новый исходный файл документа."
-            fileName={versionFileName ?? undefined}
+            fileName={
+              replaceFileMutation.isPending
+                ? "Загрузка…"
+                : (versionFileName ?? undefined)
+            }
             onFileSelect={(file) => {
-              setVersionFileName(file.name);
-              setVersionDialogOpen(false);
-              toast({
-                title: "Новая версия принята",
-                description: "После сохранения можно запустить reindex.",
-              });
+              if (replaceFileMutation.isPending) {
+                return;
+              }
+              replaceFileMutation.mutate(file);
             }}
           />
         </DialogContent>

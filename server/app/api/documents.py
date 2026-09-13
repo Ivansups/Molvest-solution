@@ -40,6 +40,7 @@ from app.services.documents import (
     UnsupportedFileTypeError,
     delete_document,
     reindex_document,
+    replace_document_file,
     update_document_metadata,
     upload_document,
 )
@@ -200,6 +201,52 @@ async def patch_document_route(
             detail="Не найден",
         ) from exc
     logger.info("patch готов document_id=%s", document.id)
+    return document_to_out(document)
+
+
+@router.post("/{document_id}/file")
+async def replace_document_file_route(
+    session: SessionDep,
+    background_tasks: BackgroundTasks,
+    document_id: UUID,
+    installation_id: UUID,
+    file: UploadFile,
+) -> DocumentOut:
+    """Заменяет байты файла и ставит ту же фоновую индексацию, что и upload."""
+    logger.info(
+        "замена файла document_id=%s installation_id=%s filename=%s",
+        document_id,
+        installation_id,
+        file.filename,
+    )
+    try:
+        document = await replace_document_file(
+            session,
+            document_id,
+            installation_id,
+            file=file,
+        )
+    except UnsupportedFileTypeError as exc:
+        logger.warning("замена файла отклонена: %s", exc)
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except DuplicateDocumentError as exc:
+        logger.warning("замена файла дубль: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except DocumentNotFoundError as exc:
+        logger.warning("замена файла: документ не найден document_id=%s", document_id)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Не найден",
+        ) from exc
+    logger.info(
+        "замена файла готова document_id=%s status=%s",
+        document.id,
+        document.status,
+    )
+    _schedule_reindex(background_tasks, document.id, installation_id)
     return document_to_out(document)
 
 

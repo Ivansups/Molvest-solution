@@ -51,3 +51,19 @@ async def get_document(
         )
     )
     return (await session.scalars(stmt)).first()
+
+
+async def is_file_name_taken(
+    session: AsyncSession,
+    installation_id: UUID,
+    file_name: str,
+    *,
+    exclude_id: UUID,
+) -> bool:
+    """True, если это имя файла уже занято другим документом установки."""
+    stmt = select(Document.id).where(
+        Document.installation_id == installation_id,
+        Document.file_name == file_name,
+        Document.id != exclude_id,
+    )
+    return (await session.scalar(stmt)) is not None

@@ -15,7 +15,7 @@ from app.core.redis import increment_kb_version
 from app.models.document import Document
 from app.models.enums import DocumentStatus, FileType
 from app.rag.ingestion import IngestionError, index_document
-from app.selectors.documents import get_document
+from app.selectors.documents import get_document, is_file_name_taken
 
 logger = logging.getLogger(__name__)
 
@@ -107,8 +107,7 @@ async def upload_document(
 
     dest = _storage_path(cfg.upload_dir, document)
     try:
-        await asyncio.to_thread(dest.parent.mkdir, parents=True, exist_ok=True)
-        await asyncio.to_thread(dest.write_bytes, await file.read())
+        await _persist_file(dest, await file.read())
     except OSError:
         await session.delete(document)
         await session.commit()
@@ -161,6 +160,67 @@ async def update_document_metadata(
     return document
 
 
+async def replace_document_file(
+    session: AsyncSession,
+    document_id: UUID,
+    installation_id: UUID,
+    *,
+    file: UploadFile,
+    app_settings: Settings | None = None,
+) -> Document:
+    """Пишет новые байты файла, обновляет имя/тип и ставит PENDING."""
+    cfg = app_settings or settings
+    document = await get_document(session, document_id, installation_id)
+    if document is None:
+        raise DocumentNotFoundError(document_id)
+
+    safe_name = Path(file.filename or "").name
+    if not safe_name:
+        raise UnsupportedFileTypeError(file.filename or "")
+    file_type = file_type_from_name(safe_name)
+
+    if await is_file_name_taken(
+        session,
+        installation_id,
+        safe_name,
+        exclude_id=document.id,
+    ):
+        raise DuplicateDocumentError(safe_name)
+
+    old_path = _path_from_metadata(document)
+    payload = await file.read()
+    document.file_name = safe_name
+    document.file_type = file_type
+    document.status = DocumentStatus.PENDING
+    dest = _storage_path(cfg.upload_dir, document)
+    try:
+        await _persist_file(dest, payload)
+    except OSError:
+        await session.rollback()
+        raise
+
+    stored = dict(document.extra_metadata)
+    stored["storage_path"] = str(dest)
+    stored.pop("indexing_error", None)
+    document.extra_metadata = stored
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        if old_path is None or dest != old_path:
+            await asyncio.to_thread(dest.unlink, missing_ok=True)
+        raise DuplicateDocumentError(safe_name) from exc
+    await session.refresh(document)
+    if old_path is not None and old_path != dest:
+        await asyncio.to_thread(old_path.unlink, missing_ok=True)
+    logger.info(
+        "файл заменён document_id=%s path=%s",
+        document.id,
+        dest,
+    )
+    return document
+
+
 async def delete_document(
     session: AsyncSession,
     document_id: UUID,
@@ -209,6 +269,11 @@ async def reindex_document(
 
 class ReindexFailedError(Exception):
     """Индексация документа не удалась (см. поле indexing_error)."""
+
+
+async def _persist_file(dest: Path, data: bytes) -> None:
+    await asyncio.to_thread(dest.parent.mkdir, parents=True, exist_ok=True)
+    await asyncio.to_thread(dest.write_bytes, data)
 
 
 def _storage_path(upload_dir: str, document: Document) -> Path:

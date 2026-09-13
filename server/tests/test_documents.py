@@ -240,6 +240,13 @@ async def test_installation_scope_hides_foreign_document(
     )
     assert patched.status_code == 404
 
+    replaced = await api_client.post(
+        f"/api/documents/{document_id}/file",
+        params=foreign,
+        files={"file": ("foreign.pdf", b"%PDF-1.4 other", "application/pdf")},
+    )
+    assert replaced.status_code == 404
+
     own = await api_client.get(
         f"/api/documents/{document_id}",
         params={"installation_id": str(INSTALL_A)},
@@ -433,3 +440,161 @@ async def test_patch_unknown_document_is_404(api_client: AsyncClient) -> None:
         json={"title": "Нет такого"},
     )
     assert response.status_code == 404
+
+
+async def _replace_file(
+    client: AsyncClient,
+    document_id: str,
+    file_name: str,
+    *,
+    installation_id: UUID = INSTALL_A,
+    body: bytes = b"%PDF-1.4 v2",
+) -> tuple[int, dict[str, object]]:
+    response = await client.post(
+        f"/api/documents/{document_id}/file",
+        params={"installation_id": str(installation_id)},
+        files={"file": (file_name, body, "application/octet-stream")},
+    )
+    payload: dict[str, object] = response.json() if response.content else {}
+    return response.status_code, payload
+
+
+async def test_replace_file_same_name_twice(
+    api_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.api.documents as documents_api
+
+    ran: list[UUID] = []
+
+    async def fake_background(
+        document_id: UUID,
+        installation_id: UUID,
+        request_id: str,
+    ) -> None:
+        assert request_id
+        assert installation_id == INSTALL_A
+        ran.append(document_id)
+
+    monkeypatch.setattr(documents_api, "_reindex_in_background", fake_background)
+
+    code, created = await _upload(api_client, "guide.pdf", body=b"%PDF-1.4 v1")
+    assert code == 201
+    document_id = str(created["id"])
+    first_path = Path(str(created["metadata"]["storage_path"]))  # type: ignore[index]
+    assert first_path.read_bytes() == b"%PDF-1.4 v1"
+    await _mark_indexed(db_session, UUID(document_id))
+
+    first_code, first = await _replace_file(
+        api_client,
+        document_id,
+        "guide.pdf",
+        body=b"%PDF-1.4 v2",
+    )
+    assert first_code == 200
+    assert first["file_name"] == "guide.pdf"
+    assert first["status"] == DocumentStatus.PENDING
+    stored = Path(str(first["metadata"]["storage_path"]))  # type: ignore[index]
+    assert stored.is_file()
+    assert stored.read_bytes() == b"%PDF-1.4 v2"
+
+    second_code, second = await _replace_file(
+        api_client,
+        document_id,
+        "guide.pdf",
+        body=b"%PDF-1.4 v3",
+    )
+    assert second_code == 200
+    assert second["file_name"] == "guide.pdf"
+    assert second["status"] == DocumentStatus.PENDING
+    assert Path(str(second["metadata"]["storage_path"])).read_bytes() == (  # type: ignore[index]
+        b"%PDF-1.4 v3"
+    )
+    assert ran == [UUID(document_id), UUID(document_id), UUID(document_id)]
+
+    scope = {"installation_id": str(INSTALL_A)}
+    patched = await api_client.patch(
+        f"/api/documents/{document_id}",
+        params=scope,
+        json={"title": "После замены"},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["title"] == "После замены"
+    assert patched.json()["file_name"] == "guide.pdf"
+    assert Path(str(patched.json()["metadata"]["storage_path"])).read_bytes() == (
+        b"%PDF-1.4 v3"
+    )
+
+
+async def test_replace_file_conflicts_with_other_document(
+    api_client: AsyncClient,
+) -> None:
+    first_code, first = await _upload(api_client, "alpha.pdf", body=b"%PDF-1.4 a")
+    second_code, second = await _upload(api_client, "beta.pdf", body=b"%PDF-1.4 b")
+    assert first_code == 201
+    assert second_code == 201
+    alpha_id = str(first["id"])
+    alpha_path = Path(str(first["metadata"]["storage_path"]))  # type: ignore[index]
+    beta_path = Path(str(second["metadata"]["storage_path"]))  # type: ignore[index]
+
+    conflict, _ = await _replace_file(
+        api_client,
+        alpha_id,
+        "beta.pdf",
+        body=b"%PDF-1.4 x",
+    )
+    assert conflict == 409
+    assert alpha_path.is_file()
+    assert alpha_path.read_bytes() == b"%PDF-1.4 a"
+    assert beta_path.is_file()
+    assert beta_path.read_bytes() == b"%PDF-1.4 b"
+
+    scope = {"installation_id": str(INSTALL_A)}
+    detail = await api_client.get(f"/api/documents/{alpha_id}", params=scope)
+    assert detail.status_code == 200
+    assert detail.json()["file_name"] == "alpha.pdf"
+
+
+async def test_replace_file_renames_and_drops_old_path(
+    api_client: AsyncClient,
+) -> None:
+    code, created = await _upload(api_client, "old.pdf", body=b"%PDF-1.4 old")
+    assert code == 201
+    document_id = str(created["id"])
+    old_path = Path(str(created["metadata"]["storage_path"]))  # type: ignore[index]
+
+    replaced_code, replaced = await _replace_file(
+        api_client,
+        document_id,
+        "new.md",
+        body="# новая версия".encode(),
+    )
+    assert replaced_code == 200
+    assert replaced["file_name"] == "new.md"
+    assert replaced["file_type"] == "MD"
+    new_path = Path(str(replaced["metadata"]["storage_path"]))  # type: ignore[index]
+    assert new_path.is_file()
+    assert new_path.read_bytes() == "# новая версия".encode()
+    assert not old_path.exists()
+
+
+async def test_replace_file_unknown_document_is_404(
+    api_client: AsyncClient,
+) -> None:
+    code, _ = await _replace_file(api_client, str(uuid4()), "missing.pdf")
+    assert code == 404
+
+
+async def test_replace_file_rejects_unsupported_type(
+    api_client: AsyncClient,
+) -> None:
+    code, created = await _upload(api_client, "typed.pdf")
+    assert code == 201
+    rejected, _ = await _replace_file(
+        api_client,
+        str(created["id"]),
+        "note.txt",
+        body=b"hello",
+    )
+    assert rejected == 422
