@@ -1,7 +1,9 @@
 """Сборка графа: vision → classify → router → кэш / RAG / ответ."""
 
 import logging
-from typing import Literal
+import time
+from collections.abc import Awaitable, Callable, Mapping
+from typing import Literal, cast
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -19,6 +21,21 @@ from app.core.redis import get_cached_answer, get_kb_version, set_cached_answer
 from app.rag.retrieval import Retriever, make_retriever
 
 logger = logging.getLogger(__name__)
+
+
+def _timed[NodeT: Callable[[AgentState], Awaitable[Mapping[str, object]]]](
+    name: str, node: NodeT
+) -> NodeT:
+    """Оборачивает ноду замером времени: видно вклад каждого шага в общий p95/p99."""
+
+    async def wrapper(state: AgentState) -> Mapping[str, object]:
+        started = time.monotonic()
+        result = await node(state)
+        elapsed_ms = (time.monotonic() - started) * 1000
+        logger.info("node timing name=%s ms=%.1f", name, elapsed_ms)
+        return result
+
+    return cast(NodeT, wrapper)
 
 
 def build_graph(
@@ -45,12 +62,12 @@ def build_graph(
     async def router_node(state: AgentState) -> dict[str, object]:
         return await route_intent(state, classifier=effective_classifier, llm=llm)
 
-    builder.add_node("vision", vision_node)
-    builder.add_node("classify", classify)
-    builder.add_node("router", router_node)
-    builder.add_node("lookup_cache", _lookup_cached_answer)
-    builder.add_node("retrieve", retrieve_node)
-    builder.add_node("generate", generate_node)
+    builder.add_node("vision", _timed("vision", vision_node))
+    builder.add_node("classify", _timed("classify", classify))
+    builder.add_node("router", _timed("router", router_node))
+    builder.add_node("lookup_cache", _timed("lookup_cache", _lookup_cached_answer))
+    builder.add_node("retrieve", _timed("retrieve", retrieve_node))
+    builder.add_node("generate", _timed("generate", generate_node))
 
     builder.add_edge(START, "vision")
     builder.add_edge("vision", "classify")

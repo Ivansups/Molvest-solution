@@ -53,7 +53,7 @@ def parse_router_decision(content: str) -> RouterDecision:
     lines = [line.strip() for line in content.splitlines() if line.strip()]
     if not lines:
         raise OpenRouterError("Пустой ответ intake-фильтра")
-    code = re.sub(r"[^A-Z]", "", lines[0].upper())
+    code = re.sub(r"[^A-Z_]", "", lines[0].upper())
     intent = _ROUTER_INTENTS.get(code)
     if intent is None:
         logger.warning("OpenRouter intake ответил неоднозначно: %r", content)
