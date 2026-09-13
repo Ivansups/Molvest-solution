@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 
 class AgentSettingsOut(BaseModel):
@@ -23,7 +23,8 @@ class AgentSettingsUpdate(BaseModel):
 
     confidence_threshold: float = Field(ge=0.5, le=0.99)
     operator_assist_mode: Literal["draft", "auto", "agent"]
-    escalate_on_detector_failure: bool
-    escalate_on_low_rag: bool
-    skip_low_rag_on_image: bool
-    escalate_on_guest_handoff: bool
+    # StrictBool: строки вроде "yes" не коерсятся в True (иначе PUT даёт 200).
+    escalate_on_detector_failure: StrictBool
+    escalate_on_low_rag: StrictBool
+    skip_low_rag_on_image: StrictBool
+    escalate_on_guest_handoff: StrictBool
