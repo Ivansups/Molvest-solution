@@ -8,12 +8,16 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.graph import build_graph
-from app.agent.nodes.classify import _EMPTY_REPLY, classify
+from app.agent.nodes.classify import _EMPTY_REPLY
 from app.agent.nodes.generate import generate
-from app.agent.nodes.handoff_detect import (
+from app.agent.nodes.router import (
     DETECTOR_FAILURE_REASON,
     HANDOFF_ESCALATION_REASON,
-    handoff_detect,
+    route_intent,
+)
+from app.agent.prompts import (
+    DEFAULT_AWAY_REPLY,
+    DEFAULT_GREETING_REPLY,
 )
 from app.agent.state import AgentState, RetrievedChunk
 from app.core.config import Settings
@@ -66,15 +70,26 @@ async def _empty_retriever(state: AgentState) -> list[RetrievedChunk]:
     return []
 
 
-def _classifier(handoff: bool = False, *, raises: bool = False) -> MagicMock:
-    """Мок классификатора OpenRouter: ответ YES/NO или сбой."""
+_ROUTER_DECISION = {
+    "SUPPORT": "support",
+    "HANDOFF": "handoff",
+    "GREETING": "greeting",
+    "AWAY_CHECK": "away",
+    "OFFTOPIC": "offtopic",
+}
+
+
+def _classifier(
+    decision: str = "SUPPORT", *, raises: bool = False, reply: str = ""
+) -> MagicMock:
+    """Мок intake-роутера OpenRouter: маршрут или сбой классификатора."""
     classifier = MagicMock(spec=OpenRouterClassifier)
     if raises:
-        classifier.is_handoff_request = AsyncMock(
-            side_effect=OpenRouterError("сбой классификатора")
-        )
+        classifier.route = AsyncMock(side_effect=OpenRouterError("сбой классификатора"))
     else:
-        classifier.is_handoff_request = AsyncMock(return_value=handoff)
+        classifier.route = AsyncMock(
+            return_value={"intent": _ROUTER_DECISION[decision], "reply": reply}
+        )
     classifier.is_configured.return_value = True
     return classifier
 
@@ -124,18 +139,29 @@ async def test_empty_input_skips_llm(
     llm_mock.chat_with_vision.assert_not_called()
 
 
-async def test_greeting_and_off_topic_still_reach_generate(
+async def test_greeting_and_off_topic_end_at_router(
     llm_mock: MagicMock, app_settings: Settings
 ) -> None:
-    """Приветствие и оффтоп больше не отвечают заготовкой — всегда идёт LLM."""
-    llm_mock.generate = AsyncMock(return_value="Ответ из базы")
-    graph = build_graph(llm_mock, app_settings, retriever=_hit_retriever)
-    for text in ("привет", "какая у вас погода"):
-        llm_mock.generate.reset_mock()
+    """Приветствие/оффтоп отвечает роутер — retrieve и generate не вызываются."""
+
+    async def forbidden_retriever(state: AgentState) -> list[RetrievedChunk]:
+        raise AssertionError("retrieve не должен вызываться после ответа роутера")
+
+    for text, decision, reply in (
+        ("привет", "GREETING", "привет!"),
+        ("какая у вас погода", "OFFTOPIC", "помогаю только по 1С"),
+    ):
+        graph = build_graph(
+            llm_mock,
+            app_settings,
+            retriever=forbidden_retriever,
+            handoff_classifier=_classifier(decision, reply=reply),
+        )
         result = await graph.ainvoke(_state(text=text))
-        assert result["intent"] == "support"
-        assert result["answer"] == "Ответ из базы"
-        llm_mock.generate.assert_awaited_once()
+        assert result["intent"] == decision.lower()
+        assert result["answer"] == reply
+        assert result["escalated"] is False
+        llm_mock.generate.assert_not_awaited()
 
 
 async def test_support_retrieves_then_generates(
@@ -197,7 +223,7 @@ async def test_vision_low_score_still_generates(
         llm_mock,
         app_settings,
         retriever=_empty_retriever,
-        handoff_classifier=_classifier(handoff=False),
+        handoff_classifier=_classifier(),
     )
     result = await graph.ainvoke(_state(text="что видишь?", image_base64="AAA"))
     assert result["escalated"] is False
@@ -207,75 +233,114 @@ async def test_vision_low_score_still_generates(
     llm_mock.classify_handoff.assert_not_awaited()
 
 
-async def test_handoff_detect_uses_guest_text_not_vision_dump() -> None:
-    classifier = _classifier(handoff=False)
+async def test_route_intent_uses_guest_text_not_vision_dump() -> None:
+    classifier = _classifier()
     llm = _llm()
     dump = "что видишь?\n\nОписание скриншота:\nCHAMPIONSHIP чат с Женей"
-    result = await handoff_detect(
+    result = await route_intent(
         {"text": "что видишь?", "query": dump},
         classifier=classifier,
         llm=llm,
     )
     assert result == {}
-    classifier.is_handoff_request.assert_awaited_once_with("что видишь?")
+    classifier.route.assert_awaited_once_with("что видишь?")
 
 
-async def test_classify_rules() -> None:
-    assert (await classify({"query": "привет!"}))["intent"] == "support"
-    assert (await classify({"query": "спасибо"}))["intent"] == "support"
-    assert (await classify({"query": "как провести документ"}))["intent"] == "support"
-    assert (await classify({"query": "какая у вас погода"}))["intent"] == "support"
-    assert (await classify({"query": "ты натурал?"}))["intent"] == "support"
-    empty = await classify({"query": "   "})
-    assert empty["intent"] == "empty"
-    assert empty["answer"] == _EMPTY_REPLY
-
-
-async def test_handoff_detect_yes_escalates() -> None:
-    classifier = _classifier(handoff=True)
+async def test_route_intent_handoff_escalates() -> None:
+    classifier = _classifier("HANDOFF")
     llm = _llm()
-    result = await handoff_detect(
+    result = await route_intent(
         {"query": "Позовите оператора"}, classifier=classifier, llm=llm
     )
     assert result["intent"] == "handoff"
     assert result["escalated"] is True
     assert result["escalation_reason"] == HANDOFF_ESCALATION_REASON
-    classifier.is_handoff_request.assert_awaited_once_with("Позовите оператора")
+    classifier.route.assert_awaited_once_with("Позовите оператора")
     llm.classify_handoff.assert_not_awaited()
 
 
-async def test_handoff_detect_no_keeps_support() -> None:
-    """Вопросы «как …» про оператора — запрос к базе знаний, не хэндофф."""
-    classifier = _classifier(handoff=False)
+async def test_route_intent_support_keeps_support() -> None:
+    """«Как …» про оператора — запрос к базе знаний, не хэндофф и не оффтоп."""
+    classifier = _classifier()
     llm = _llm()
-    result = await handoff_detect(
+    result = await route_intent(
         {"query": "как позвать оператора в 1с"}, classifier=classifier, llm=llm
     )
     assert result == {}
-    classifier.is_handoff_request.assert_awaited_once_with("как позвать оператора в 1с")
+    classifier.route.assert_awaited_once_with("как позвать оператора в 1с")
     llm.classify_handoff.assert_not_awaited()
 
 
-async def test_handoff_detect_openrouter_error_falls_back_to_gigachat() -> None:
-    """Сбой OpenRouter — тот же YES/NO через GigaChat Lite."""
+async def test_route_intent_offtopic_answers_without_llm() -> None:
+    classifier = _classifier("OFFTOPIC", reply="помогаю только по 1С")
+    llm = _llm()
+    result = await route_intent(
+        {"query": "какая у вас погода"}, classifier=classifier, llm=llm
+    )
+    assert result["intent"] == "offtopic"
+    assert result["answer"] == "помогаю только по 1С"
+    assert result["confidence"] == 1.0
+    assert result["escalated"] is False
+    llm.classify_handoff.assert_not_awaited()
+    llm.generate.assert_not_awaited()
+
+
+async def test_route_intent_greeting_falls_back_to_default_reply() -> None:
+    classifier = _classifier("GREETING", reply="")
+    llm = _llm()
+    result = await route_intent({"query": "привет"}, classifier=classifier, llm=llm)
+    assert result["intent"] == "greeting"
+    assert result["answer"] == DEFAULT_GREETING_REPLY
+    llm.generate.assert_not_awaited()
+
+
+async def test_route_intent_openrouter_error_falls_back_to_rules_greeting() -> None:
+    """Сбой OpenRouter — «привет» ловится правилами, GigaChat не трогаем."""
     classifier = _classifier(raises=True)
-    llm = _llm(handoff=True)
-    result = await handoff_detect(
-        {"query": "Позовите оператора"}, classifier=classifier, llm=llm
+    llm = _llm(raises=True)
+    result = await route_intent({"query": "привет"}, classifier=classifier, llm=llm)
+    assert result["intent"] == "greeting"
+    classifier.route.assert_awaited_once()
+    llm.classify_handoff.assert_not_awaited()
+
+
+async def test_route_intent_openrouter_error_rules_handoff() -> None:
+    """Сбой OpenRouter — «позови оператора» решают правила без LLM."""
+    classifier = _classifier(raises=True)
+    llm = _llm(raises=True)
+    result = await route_intent(
+        {"query": "позови оператора"}, classifier=classifier, llm=llm
     )
     assert result["intent"] == "handoff"
     assert result["escalated"] is True
     assert result["escalation_reason"] == HANDOFF_ESCALATION_REASON
-    classifier.is_handoff_request.assert_awaited_once()
+    llm.classify_handoff.assert_not_awaited()
+
+
+async def test_route_intent_openrouter_error_falls_back_to_gigachat_handoff() -> None:
+    """Правила не решили — тот же YES/NO хэндоффа через GigaChat Lite."""
+    classifier = _classifier(raises=True)
+    llm = _llm(handoff=True)
+    result = await route_intent(
+        {"query": "Соедините с живым специалистом"},
+        classifier=classifier,
+        llm=llm,
+    )
+    assert result["intent"] == "handoff"
+    assert result["escalated"] is True
+    assert result["escalation_reason"] == HANDOFF_ESCALATION_REASON
+    classifier.route.assert_awaited_once()
     llm.classify_handoff.assert_awaited_once()
 
 
-async def test_handoff_detect_both_fail_escalates() -> None:
+async def test_route_intent_both_fail_escalates() -> None:
     """Оба классификатора упали — тикет, не ответ из базы."""
     classifier = _classifier(raises=True)
     llm = _llm(raises=True)
-    result = await handoff_detect(
-        {"query": "Позовите оператора"}, classifier=classifier, llm=llm
+    result = await route_intent(
+        {"query": "Соедините с живым специалистом"},
+        classifier=classifier,
+        llm=llm,
     )
     assert result["intent"] == "handoff"
     assert result["escalated"] is True
@@ -283,27 +348,41 @@ async def test_handoff_detect_both_fail_escalates() -> None:
     llm.classify_handoff.assert_awaited_once()
 
 
-async def test_handoff_detect_not_configured_uses_gigachat() -> None:
-    """Пустой ключ OpenRouter — классификация GigaChat, детект не выключается."""
-    classifier = _classifier(handoff=True)
+async def test_route_intent_not_configured_uses_rules_away() -> None:
+    """Пустой ключ OpenRouter — «ты тут?» отвечаем по правилам без LLM."""
+    classifier = _classifier("HANDOFF")
+    classifier.is_configured.return_value = False
+    llm = _llm(raises=True)
+    result = await route_intent({"query": "ты тут?"}, classifier=classifier, llm=llm)
+    assert result["intent"] == "away"
+    assert result["answer"] == DEFAULT_AWAY_REPLY
+    classifier.route.assert_not_awaited()
+    llm.classify_handoff.assert_not_awaited()
+
+
+async def test_route_intent_not_configured_handoff_uses_gigachat() -> None:
+    """Пустой ключ OpenRouter — хэндофф не выключается, решается GigaChat."""
+    classifier = _classifier("HANDOFF")
     classifier.is_configured.return_value = False
     llm = _llm(handoff=True)
-    result = await handoff_detect(
-        {"query": "Позовите оператора"}, classifier=classifier, llm=llm
+    result = await route_intent(
+        {"query": "Соедините с живым специалистом"},
+        classifier=classifier,
+        llm=llm,
     )
     assert result["intent"] == "handoff"
     assert result["escalated"] is True
     assert result["escalation_reason"] == HANDOFF_ESCALATION_REASON
-    classifier.is_handoff_request.assert_not_awaited()
+    classifier.route.assert_not_awaited()
     llm.classify_handoff.assert_awaited_once()
 
 
-async def test_handoff_detect_empty_query_skips() -> None:
-    classifier = _classifier(handoff=True)
-    llm = _llm(handoff=True)
-    result = await handoff_detect({"query": "   "}, classifier=classifier, llm=llm)
+async def test_route_intent_empty_query_skips() -> None:
+    classifier = _classifier("HANDOFF")
+    llm = _llm()
+    result = await route_intent({"query": "   "}, classifier=classifier, llm=llm)
     assert result == {}
-    classifier.is_handoff_request.assert_not_awaited()
+    classifier.route.assert_not_awaited()
     llm.classify_handoff.assert_not_awaited()
 
 
@@ -317,7 +396,7 @@ async def test_handoff_request_escalates_without_llm(
         llm_mock,
         app_settings,
         retriever=forbidden_retriever,
-        handoff_classifier=_classifier(handoff=True),
+        handoff_classifier=_classifier("HANDOFF"),
     )
     result = await graph.ainvoke(_state(text="Позовите оператора"))
     assert result["intent"] == "handoff"
@@ -327,16 +406,16 @@ async def test_handoff_request_escalates_without_llm(
     llm_mock.chat_with_vision.assert_not_called()
 
 
-async def test_handoff_no_goes_to_support(
+async def test_router_support_goes_through_generate(
     llm_mock: MagicMock, app_settings: Settings
 ) -> None:
-    """«как позвать оператора в 1с» — NO: граф идёт через retrieve/generate."""
+    """Роутер не срезал «как позвать оператора в 1с» — граф идёт через RAG."""
     llm_mock.generate = AsyncMock(return_value="Ответ из базы")
     graph = build_graph(
         llm_mock,
         app_settings,
         retriever=_hit_retriever,
-        handoff_classifier=_classifier(handoff=False),
+        handoff_classifier=_classifier(),
     )
     result = await graph.ainvoke(_state(text="как позвать оператора в 1с"))
     assert result["intent"] == "support"
@@ -356,7 +435,7 @@ async def test_handoff_error_falls_back_to_gigachat(
         retriever=_hit_retriever,
         handoff_classifier=_classifier(raises=True),
     )
-    result = await graph.ainvoke(_state(text="Позовите оператора"))
+    result = await graph.ainvoke(_state(text="Соедините с живым специалистом"))
     assert result["intent"] == "handoff"
     assert result["escalated"] is True
     assert result["escalation_reason"] == HANDOFF_ESCALATION_REASON
@@ -379,7 +458,7 @@ async def test_handoff_both_classifiers_fail_escalates(
         retriever=forbidden_retriever,
         handoff_classifier=_classifier(raises=True),
     )
-    result = await graph.ainvoke(_state(text="Позовите оператора"))
+    result = await graph.ainvoke(_state(text="Соедините с живым специалистом"))
     assert result["intent"] == "handoff"
     assert result["escalated"] is True
     assert result["escalation_reason"] == DETECTOR_FAILURE_REASON
@@ -391,7 +470,7 @@ async def test_handoff_classifier_disabled_uses_gigachat(
 ) -> None:
     """Ключ OpenRouter не задан — детект идёт через GigaChat Lite."""
     llm_mock.classify_handoff = AsyncMock(return_value=True)
-    classifier = _classifier(handoff=True)
+    classifier = _classifier("HANDOFF")
     classifier.is_configured.return_value = False
     graph = build_graph(
         llm_mock,
@@ -399,10 +478,10 @@ async def test_handoff_classifier_disabled_uses_gigachat(
         retriever=_hit_retriever,
         handoff_classifier=classifier,
     )
-    result = await graph.ainvoke(_state(text="Позовите оператора"))
+    result = await graph.ainvoke(_state(text="Соедините с живым специалистом"))
     assert result["intent"] == "handoff"
     assert result["escalated"] is True
-    classifier.is_handoff_request.assert_not_awaited()
+    classifier.route.assert_not_awaited()
     llm_mock.classify_handoff.assert_awaited_once()
     llm_mock.generate.assert_not_called()
 
@@ -485,7 +564,7 @@ async def test_run_chat_turn_vision_keeps_guest_text(
         llm_mock,
         app_settings,
         retriever=_empty_retriever,
-        handoff_classifier=_classifier(handoff=False),
+        handoff_classifier=_classifier(),
     )
     monkeypatch.setattr(agent_service, "get_graph", lambda: graph)
     request = chat_request.model_copy(
@@ -565,7 +644,7 @@ async def test_run_chat_turn_handoff_persists_reason(
     graph = build_graph(
         llm_mock,
         app_settings,
-        handoff_classifier=_classifier(handoff=True),
+        handoff_classifier=_classifier("HANDOFF"),
     )
     monkeypatch.setattr(agent_service, "get_graph", lambda: graph)
 
@@ -613,7 +692,7 @@ async def test_run_chat_turn_handoff_replay_does_not_double_escalate(
     graph = build_graph(
         llm_mock,
         app_settings,
-        handoff_classifier=_classifier(handoff=True),
+        handoff_classifier=_classifier("HANDOFF"),
     )
     monkeypatch.setattr(agent_service, "get_graph", lambda: graph)
 
@@ -990,10 +1069,10 @@ async def test_resolved_chat_turn_rejected(
         await run_chat_turn(replay, db_session)
 
 
-async def test_force_handoff_skips_nlp_classifier() -> None:
-    classifier = _classifier(handoff=False)
+async def test_force_handoff_skips_router_classifier() -> None:
+    classifier = _classifier()
     llm = _llm(handoff=False)
-    result = await handoff_detect(
+    result = await route_intent(
         {"query": "Позовите оператора", "force_handoff": True},
         classifier=classifier,
         llm=llm,
@@ -1001,14 +1080,14 @@ async def test_force_handoff_skips_nlp_classifier() -> None:
     assert result["intent"] == "handoff"
     assert result["escalated"] is True
     assert result["escalation_reason"] == HANDOFF_ESCALATION_REASON
-    classifier.is_handoff_request.assert_not_awaited()
+    classifier.route.assert_not_awaited()
     llm.classify_handoff.assert_not_awaited()
 
 
 async def test_force_handoff_graph_skips_retrieve_and_generate(
     llm_mock: MagicMock, app_settings: Settings
 ) -> None:
-    classifier = _classifier(handoff=False)
+    classifier = _classifier()
     graph = build_graph(
         llm_mock,
         app_settings,
@@ -1018,7 +1097,7 @@ async def test_force_handoff_graph_skips_retrieve_and_generate(
     result = await graph.ainvoke(_state(force_handoff=True, text="Позовите оператора"))
     assert result["intent"] == "handoff"
     assert result["escalated"] is True
-    classifier.is_handoff_request.assert_not_awaited()
+    classifier.route.assert_not_awaited()
     llm_mock.classify_handoff.assert_not_awaited()
     llm_mock.generate.assert_not_called()
 
@@ -1026,7 +1105,7 @@ async def test_force_handoff_graph_skips_retrieve_and_generate(
 async def test_force_handoff_empty_text_escalates_not_empty_template(
     llm_mock: MagicMock, app_settings: Settings
 ) -> None:
-    classifier = _classifier(handoff=False)
+    classifier = _classifier()
     graph = build_graph(
         llm_mock,
         app_settings,
@@ -1039,14 +1118,14 @@ async def test_force_handoff_empty_text_escalates_not_empty_template(
     assert result["intent"] == "handoff"
     assert result["escalated"] is True
     assert result.get("answer") != _EMPTY_REPLY
-    classifier.is_handoff_request.assert_not_awaited()
+    classifier.route.assert_not_awaited()
     llm_mock.generate.assert_not_called()
 
 
-async def test_ordinary_message_still_runs_handoff_classifier(
+async def test_ordinary_message_still_runs_router_classifier(
     llm_mock: MagicMock, app_settings: Settings
 ) -> None:
-    classifier = _classifier(handoff=False)
+    classifier = _classifier()
     llm_mock.generate = AsyncMock(return_value="Ответ из базы")
     graph = build_graph(
         llm_mock,
@@ -1056,7 +1135,7 @@ async def test_ordinary_message_still_runs_handoff_classifier(
     )
     result = await graph.ainvoke(_state(force_handoff=False))
     assert result["intent"] == "support"
-    classifier.is_handoff_request.assert_awaited_once()
+    classifier.route.assert_awaited_once()
     llm_mock.generate.assert_awaited_once()
 
 
@@ -1075,7 +1154,7 @@ async def test_run_chat_turn_force_handoff_persists_one_escalation(
     from app.models.enums import ConversationStatus
     from app.models.escalation import Escalation
 
-    classifier = _classifier(handoff=False)
+    classifier = _classifier()
     graph = build_graph(
         llm_mock,
         app_settings,
@@ -1090,7 +1169,7 @@ async def test_run_chat_turn_force_handoff_persists_one_escalation(
     first = await run_chat_turn(request, db_session)
     assert first.escalated is True
     assert first.text == GUEST_ESCALATION_TEXT
-    classifier.is_handoff_request.assert_not_awaited()
+    classifier.route.assert_not_awaited()
     llm_mock.generate.assert_not_called()
 
     replay = request.model_copy(

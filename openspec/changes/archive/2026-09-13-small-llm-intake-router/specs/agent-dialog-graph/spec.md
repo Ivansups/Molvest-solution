@@ -1,8 +1,4 @@
-## Purpose
-
-Orchestrate guest support turns: classify only empty vs. non-empty without GigaChat, route each turn with a lightweight LLM (intake router), then cache or retrieve and generate on GigaChat for every real support question — greetings, away checks, off-topic, and explicit handoffs are answered or escalated by the router before RAG.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Classify only filters empty input
 
@@ -205,32 +201,3 @@ SHALL NOT be written.
 - **WHEN** retrieve scores below the confidence threshold
 - **THEN** the graph does not call generate and does not write an answer
   cache entry
-
-### Requirement: Generate uses the last messages of the conversation
-
-When `conversation_id` points to an existing conversation, `generate` SHALL include the last 3 or 4 persisted messages as context. The graph SHALL NOT open its own database session to load them.
-
-#### Scenario: Follow-up uses prior turns
-
-- **WHEN** a user asks a short follow-up in an existing conversation that already has messages
-- **THEN** those recent messages are present in the generate prompt
-
-### Requirement: Escalated draft guest turns skip GigaChat
-
-When assist mode is `draft` and conversation status is already `escalated`, a guest support turn SHALL NOT look up the answer cache, SHALL NOT retrieve, and SHALL NOT call generate. The graph SHALL accept `conversation_status` in state and SHALL NOT open a database session. Weak-score turns on an `open` conversation SHALL still retrieve to decide escalation and SHALL still skip generate.
-
-#### Scenario: Follow-up in draft skips the model
-
-- **WHEN** assist mode is `draft` and an already `escalated` conversation receives a support question
-- **THEN** generate is not called and retrieve is not called
-
-#### Scenario: Open conversation still caches repeats
-
-- **WHEN** the same support question is asked again on an `open` conversation while `kb_version` is unchanged
-- **THEN** the second response comes from cache and generate is not called
-
-#### Scenario: Weak score on open still skips generate
-
-- **WHEN** retrieve scores below the confidence threshold on an `open` conversation
-- **THEN** the graph does not call generate and does not write an answer cache entry
-</content>

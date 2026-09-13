@@ -1,15 +1,17 @@
-"""Сборка диалогового графа: vision → classify → handoff → кэш / RAG / ответ."""
+"""Сборка графа: vision → classify → router → кэш / RAG / ответ."""
 
 import logging
-from typing import Literal
+import time
+from collections.abc import Awaitable, Callable, Mapping
+from typing import Literal, cast
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from app.agent.nodes.classify import classify
 from app.agent.nodes.generate import generate
-from app.agent.nodes.handoff_detect import handoff_detect
 from app.agent.nodes.retrieve import retrieve
+from app.agent.nodes.router import route_intent
 from app.agent.nodes.vision import vision
 from app.agent.state import AgentState
 from app.core.config import Settings, settings
@@ -19,6 +21,21 @@ from app.core.redis import get_cached_answer, get_kb_version, set_cached_answer
 from app.rag.retrieval import Retriever, make_retriever
 
 logger = logging.getLogger(__name__)
+
+
+def _timed[NodeT: Callable[[AgentState], Awaitable[Mapping[str, object]]]](
+    name: str, node: NodeT
+) -> NodeT:
+    """Оборачивает ноду замером времени: видно вклад каждого шага в общий p95/p99."""
+
+    async def wrapper(state: AgentState) -> Mapping[str, object]:
+        started = time.monotonic()
+        result = await node(state)
+        elapsed_ms = (time.monotonic() - started) * 1000
+        logger.info("node timing name=%s ms=%.1f", name, elapsed_ms)
+        return result
+
+    return cast(NodeT, wrapper)
 
 
 def build_graph(
@@ -42,20 +59,20 @@ def build_graph(
     async def retrieve_node(state: AgentState) -> dict[str, object]:
         return await retrieve(state, retriever=effective_retriever)
 
-    async def handoff_detect_node(state: AgentState) -> dict[str, object]:
-        return await handoff_detect(state, classifier=effective_classifier, llm=llm)
+    async def router_node(state: AgentState) -> dict[str, object]:
+        return await route_intent(state, classifier=effective_classifier, llm=llm)
 
-    builder.add_node("vision", vision_node)
-    builder.add_node("classify", classify)
-    builder.add_node("handoff_detect", handoff_detect_node)
-    builder.add_node("lookup_cache", _lookup_cached_answer)
-    builder.add_node("retrieve", retrieve_node)
-    builder.add_node("generate", generate_node)
+    builder.add_node("vision", _timed("vision", vision_node))
+    builder.add_node("classify", _timed("classify", classify))
+    builder.add_node("router", _timed("router", router_node))
+    builder.add_node("lookup_cache", _timed("lookup_cache", _lookup_cached_answer))
+    builder.add_node("retrieve", _timed("retrieve", retrieve_node))
+    builder.add_node("generate", _timed("generate", generate_node))
 
     builder.add_edge(START, "vision")
     builder.add_edge("vision", "classify")
     builder.add_conditional_edges("classify", _after_classify)
-    builder.add_conditional_edges("handoff_detect", _after_handoff_detect)
+    builder.add_conditional_edges("router", _after_router)
     builder.add_conditional_edges("lookup_cache", _after_cache)
 
     def after_retrieve(state: AgentState) -> Literal["generate", "__end__"]:
@@ -141,26 +158,29 @@ def get_graph() -> CompiledStateGraph[AgentState, None]:
 
 def _after_classify(
     state: AgentState,
-) -> Literal["handoff_detect", "__end__"]:
+) -> Literal["router", "__end__"]:
     if state.get("force_handoff"):
-        logger.info("после classify force_handoff → handoff_detect")
-        return "handoff_detect"
+        logger.info("после classify force_handoff → router")
+        return "router"
     intent = state.get("intent", "support")
-    nxt: Literal["handoff_detect", "__end__"] = (
-        "__end__" if intent == "empty" else "handoff_detect"
-    )
+    nxt: Literal["router", "__end__"] = "__end__" if intent == "empty" else "router"
     logger.info("после classify intent=%s → %s", intent, nxt)
     return nxt
 
 
-def _after_handoff_detect(
+def _after_router(
     state: AgentState,
 ) -> Literal["lookup_cache", "__end__"]:
-    intent = state.get("intent", "support")
-    nxt: Literal["lookup_cache", "__end__"] = (
-        "__end__" if intent == "handoff" else "lookup_cache"
+    """Роутер закончил диалог (оффтоп/приветствие/эскалация) или идём в кэш."""
+    ended = bool(state.get("answer")) or bool(state.get("escalated"))
+    nxt: Literal["lookup_cache", "__end__"] = "__end__" if ended else "lookup_cache"
+    logger.info(
+        "после router intent=%s answer=%s escalated=%s → %s",
+        state.get("intent"),
+        bool(state.get("answer")),
+        state.get("escalated"),
+        nxt,
     )
-    logger.info("после handoff_detect intent=%s → %s", intent, nxt)
     return nxt
 
 

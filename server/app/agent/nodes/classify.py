@@ -15,8 +15,8 @@ async def classify(state: AgentState) -> dict[str, object]:
 
     Всё остальное — including приветствия и явный оффтоп — идёт в support:
     ответ всегда формирует GigaChat, никаких заготовок вместо вызова LLM.
-    Детект хэндоффа (просьбы передать диалог человеку) — отдельная нода
-    `handoff_detect`: OpenRouter, при пустом ключе/сбое — GigaChat-2.
+    Маршрутизация приветствий/оффтопа/хэндоффа — нода `router`: малая LLM
+    (OpenRouter), при сбое/пустом ключе — правила и GigaChat-2 (Lite).
     """
     query = (state.get("query") or "").strip()
     if state.get("force_handoff"):

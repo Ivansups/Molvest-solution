@@ -1,28 +1,70 @@
-"""Единый клиент OpenRouter: лёгкая LLM для классификации запроса гостя.
+"""Единый клиент OpenRouter: лёгкая LLM для маршрутизации запроса гостя.
 
-Используется только для детекта хэндоффа (просьбы передать диалог человеку):
-ответы и эмбеддинги по-прежнему делает GigaChat. Все вызовы OpenRouter —
-только через этот клиент, не через сырой httpx в других местах.
+Используется для intake-фильтра чата: решает, относится ли запрос к поддержке
+(SUPPORT — дальше идёт RAG на GigaChat), просит ли гость оператора (HANDOFF —
+эскалация) или это нерелевантный трафик (приветствие, проверка связи, оффтоп —
+короткий ответ от малой модели без RAG). Генерацию ответов по 1С и эмбеддинги
+по-прежнему делает GigaChat. Все вызовы OpenRouter — только через этот клиент,
+не через сырой httpx в других местах.
 """
 
 import logging
+import re
+from typing import Literal, TypedDict
 
 import httpx
 
-from app.agent.prompts import HANDOFF_SYSTEM_PROMPT
+from app.agent.prompts import ROUTER_SYSTEM_PROMPT
 from app.core.config import Settings, settings
 
 logger = logging.getLogger(__name__)
 
-_MAX_TOKENS = 5
+_ROUTER_MAX_TOKENS = 256
+
+# Коды, которые малая модель возвращает первой строкой.
+RouterIntent = Literal["greeting", "away", "offtopic", "handoff", "support"]
+_ROUTER_INTENTS: dict[str, RouterIntent] = {
+    "SUPPORT": "support",
+    "HANDOFF": "handoff",
+    "GREETING": "greeting",
+    "AWAY_CHECK": "away",
+    "OFFTOPIC": "offtopic",
+}
+
+
+class RouterDecision(TypedDict):
+    """Решение intake-фильтра: маршрут запроса и (опционально) короткий ответ."""
+
+    intent: RouterIntent
+    reply: str
 
 
 class OpenRouterError(Exception):
     """Ошибка обращения к OpenRouter: сеть, HTTP-код или неразборчивый ответ."""
 
 
+def parse_router_decision(content: str) -> RouterDecision:
+    """Разбирает ответ малой модели: код на первой строке, ответ — ниже.
+
+    Неоднозначный ответ трактуется как ошибка: вызывающий код решает, как
+    деградировать (фолбэк на GigaChat/правила), но никогда не считает мусор
+    ответом по теме.
+    """
+    lines = [line.strip() for line in content.splitlines() if line.strip()]
+    if not lines:
+        raise OpenRouterError("Пустой ответ intake-фильтра")
+    code = re.sub(r"[^A-Z_]", "", lines[0].upper())
+    intent = _ROUTER_INTENTS.get(code)
+    if intent is None:
+        logger.warning("OpenRouter intake ответил неоднозначно: %r", content)
+        raise OpenRouterError(f"Неожиданный ответ фильтра: {content!r}")
+    reply = " ".join(lines[1:]).strip()
+    logger.info("OpenRouter intake intent=%s reply=%s", intent, len(reply))
+    return RouterDecision(intent=intent, reply=reply)
+
+
 class OpenRouterClassifier:
-    """Классификатор хэндоффа на лёгкой модели OpenRouter."""
+    """Intake-роутер на лёгкой модели OpenRouter."""
 
     def __init__(
         self,
@@ -39,45 +81,39 @@ class OpenRouterClassifier:
             },
         )
 
-    async def is_handoff_request(self, text: str) -> bool:
-        """Правда, если пользователь просит передать диалог человеку."""
-        content = await self._classify(text)
-        answer = content.strip().upper()
-        if answer == "YES":
-            return True
-        if answer == "NO":
-            return False
-        logger.warning("OpenRouter классификатор ответил неоднозначно: %r", content)
-        raise OpenRouterError(f"Неожиданный ответ классификатора: {content!r}")
+    async def route(self, text: str) -> RouterDecision:
+        """Классифицирует запрос и возвращает маршрут + короткий шаблон."""
+        content = await self._complete(ROUTER_SYSTEM_PROMPT, text, _ROUTER_MAX_TOKENS)
+        return parse_router_decision(content)
 
     def is_configured(self) -> bool:
         """Правда, если задан ключ — без него классификатор не вызываем."""
         return bool(self._settings.openrouter_api_key.strip())
 
-    async def _classify(self, text: str) -> str:
-        """Один запрос на классификацию; возвращает сырой текст ответа модели."""
+    async def _complete(self, system_prompt: str, text: str, max_tokens: int) -> str:
+        """Один запрос к chat/completions; возвращает сырой текст ответа."""
         logger.info(
-            "OpenRouter classify model=%s text_chars=%s",
+            "OpenRouter complete model=%s text_chars=%s",
             self._settings.openrouter_model,
             len(text),
         )
         payload = {
             "model": self._settings.openrouter_model,
             "messages": [
-                {"role": "system", "content": HANDOFF_SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": text},
             ],
-            "max_tokens": _MAX_TOKENS,
+            "max_tokens": max_tokens,
             "temperature": 0,
         }
         try:
             response = await self._client.post("/chat/completions", json=payload)
         except httpx.HTTPError as exc:
-            logger.warning("OpenRouter classify сеть: %s", exc)
+            logger.warning("OpenRouter complete сеть: %s", exc)
             raise OpenRouterError(str(exc)) from exc
         if response.status_code != 200:
             logger.warning(
-                "OpenRouter classify HTTP %s: %s",
+                "OpenRouter complete HTTP %s: %s",
                 response.status_code,
                 response.text[:200],
             )
@@ -87,7 +123,7 @@ class OpenRouterClassifier:
             content = data["choices"][0]["message"]["content"]
         except (KeyError, IndexError, ValueError) as exc:
             logger.warning(
-                "OpenRouter classify ответ без контента: %s", response.text[:200]
+                "OpenRouter complete ответ без контента: %s", response.text[:200]
             )
             raise OpenRouterError("Нет контента в ответе") from exc
         return content if isinstance(content, str) else str(content)
