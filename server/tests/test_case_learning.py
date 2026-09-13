@@ -15,7 +15,7 @@ from app.core.openrouter_client import (
     OpenRouterError,
     parse_case_evaluation,
 )
-from app.models.chunk import Chunk
+from app.models.chunk import EMBEDDING_DIMENSIONS, Chunk
 from app.models.conversation import Conversation
 from app.models.document import Document
 from app.models.enums import (
@@ -195,7 +195,7 @@ class FakeEmbedder:
     """Заменяет GigaChatService: эмбеддинги без сети."""
 
     async def get_embeddings(self, texts: list[str]) -> list[list[float]]:
-        vector = [0.1, 0.2, 0.3]
+        vector = [0.1] * EMBEDDING_DIMENSIONS
         return [vector for _ in texts]
 
 
