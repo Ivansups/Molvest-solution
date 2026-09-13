@@ -5,6 +5,7 @@ import {
   Database,
   LayoutDashboard,
   MessageSquare,
+  ScrollText,
   Settings,
 } from "lucide-react";
 import Link from "next/link";
@@ -30,6 +31,7 @@ const navigation: Array<{
   { to: "/chat/support", label: "Чаты", icon: MessageSquare, roles: ["admin", "operator"] },
   { to: "/knowledge-base", label: "База знаний", icon: Database, roles: ["admin", "operator"] },
   { to: "/analytics", label: "Аналитика", icon: BarChart3, roles: ["admin", "operator"] },
+  { to: "/logs", label: "Журнал", icon: ScrollText, roles: ["admin", "operator"] },
   { to: "/settings", label: "Настройки", icon: Settings, roles: ["admin", "operator"] },
 ];
 
