@@ -102,7 +102,6 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-groups
       - name: Run tests
-        # live LLM (маркер live) — только локально через make test-live
         run: uv run pytest -m "not live"
 
   test-frontend:
