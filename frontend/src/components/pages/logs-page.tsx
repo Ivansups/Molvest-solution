@@ -68,10 +68,10 @@ export function LogsPage({ installationId }: { installationId: string }) {
     return (
       <ApiStateCard
         title="Журнал недоступен"
-        description="Не удалось получить события из GET /api/logs."
+        description="Не удалось получить события рабочего контура."
         detail={error instanceof Error ? error.message : undefined}
         actionHref="/"
-        actionLabel="Вернуться на дашборд"
+        actionLabel="Вернуться на рабочий стол"
       />
     );
   }
@@ -79,10 +79,9 @@ export function LogsPage({ installationId }: { installationId: string }) {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-semibold text-secondary">Журнал</h1>
+        <h1 className="text-3xl font-semibold text-secondary">История событий</h1>
         <p className="mt-2 text-slate-500">
-          Эскалации, закрытия диалогов и статусы индексации документов. Время —
-          UTC ISO.
+          Эскалации, закрытия диалогов и статусы индексации документов.
         </p>
       </div>
       <Card>

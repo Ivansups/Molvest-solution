@@ -11,9 +11,10 @@ export function BrandMark({
   tone?: "default" | "inverse";
 }) {
   return (
-    <div className={cn("flex items-center gap-3", className)}>
-      <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-primary via-[#08b861] to-secondary text-white shadow-sm">
+    <div className={cn("brand-mark-reactive flex items-center gap-3", className)}>
+      <div className="brand-orb relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-[linear-gradient(135deg,var(--primary),#00b884_48%,var(--secondary))] text-white shadow-sm">
         <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-white/80" />
+        <span className="absolute inset-x-1 top-1 h-3 rounded-full bg-white/22 blur-sm" />
         <BotMessageSquare className="h-5 w-5" />
       </div>
       <div className={compact ? "hidden sm:block" : "block"}>

@@ -18,6 +18,7 @@ import {
 import { ApiStateCard } from "@/src/components/common/api-state-card";
 import { FileDropzone } from "@/src/components/common/file-dropzone";
 import { ConversationThread } from "@/src/components/common/conversation-thread";
+import { PageHero, SignalTile } from "@/src/components/common/experience-primitives";
 import { OperatorAssistPanel } from "@/src/components/common/operator-assist-panel";
 import { ResolveConfirmationDialog } from "@/src/components/common/resolve-confirmation-dialog";
 import { Badge } from "@/src/components/ui/badge";
@@ -86,9 +87,8 @@ const CONVERSATION_STATUS_META: Record<
   escalated: {
     label: "Эскалирован",
     icon: Headset,
-    chipClass:
-      "border-[#e85646]/25 bg-[#e85646]/10 text-[#c44e3e] shadow-none",
-    iconClass: "bg-[#e85646]/10 text-[#c44e3e]",
+    chipClass: "border-warning/25 bg-warning/10 text-warning shadow-none",
+    iconClass: "bg-warning/10 text-warning",
   },
   resolved: {
     label: "Закрыт",
@@ -122,8 +122,8 @@ function ConversationListRow({
       onClick={onSelect}
       aria-current={isActive ? "true" : undefined}
       className={cn(
-        "conversation-list-row w-full overflow-hidden rounded-[18px] border bg-white p-3.5 text-left transition-colors",
-        "border-border hover:border-secondary/25 hover:bg-slate-50/70",
+        "conversation-list-row w-full overflow-hidden rounded-[18px] border bg-white/84 p-3.5 text-left transition-colors",
+        "border-border hover:border-primary/30 hover:bg-primary/5",
         isActive &&
           "border-secondary/40 bg-secondary/[0.04] shadow-[0_8px_20px_rgba(27,51,85,0.08)]",
         isEscalated && "escalation-corner",
@@ -545,15 +545,15 @@ export function ChatPage({
   if (!isSupportMode) {
     return (
       <>
-        <Card className="shell-panel reveal-item reveal-delay-4 overflow-hidden rounded-[30px]">
+        <Card className="chameleon-frame reveal-item reveal-delay-2 overflow-hidden rounded-[34px]">
           <CardContent className="p-0">
-            <div className="flex h-[640px] min-h-0 flex-col">
-              <div className="flex shrink-0 flex-wrap items-start justify-between gap-4 border-b border-border/60 px-6 py-5">
+            <div className="flex h-[640px] min-h-0 flex-col xl:h-[calc(100vh-10.5rem)] xl:min-h-[640px]">
+              <div className="message-stage flex shrink-0 flex-wrap items-start justify-between gap-4 border-b border-primary/10 px-6 py-5">
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.2em] text-primary">
+                  <p className="stage-kicker">
                     Гостевой канал
                   </p>
-                  <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-secondary">
+                  <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-secondary">
                     Гостевой чат поддержки 1С
                   </h2>
                   {guestClosed ? (
@@ -585,8 +585,11 @@ export function ChatPage({
                   Boolean(guestConversationId) && conversationQuery.isLoading
                 ) ? (
                   <div className="p-6">
-                    <div className="rounded-[26px] border border-dashed border-border bg-slate-50/80 p-6">
-                      <p className="text-base font-medium text-secondary">
+                    <div className="message-stage rounded-[28px] border border-dashed border-primary/18 p-6">
+                      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                        <MessageCircle className="h-5 w-5" />
+                      </div>
+                      <p className="text-lg font-semibold tracking-[-0.03em] text-secondary">
                         Опишите проблему, код ошибки, форму 1С или приложите
                         скриншот.
                       </p>
@@ -611,12 +614,12 @@ export function ChatPage({
                 )}
                 {guestSendPending ? (
                   <div className="px-6 pb-6">
-                    <div className="flex items-center gap-3 rounded-2xl border border-primary/15 bg-primary/5 p-4 text-sm text-secondary">
+                    <div className="dock-panel flex items-center gap-3 p-4 text-sm text-secondary">
                       <Spinner className="h-5 w-5 shrink-0" />
                       <span>
                         {pendingImage && !sendMutation.variables?.forceHandoff
-                          ? "анализ изображения…"
-                          : "агент формирует ответ…"}
+                          ? "анализируем скриншот…"
+                          : "готовим ответ…"}
                       </span>
                       <span className="typing-dots" aria-hidden="true">
                         <span />
@@ -628,7 +631,7 @@ export function ChatPage({
                 ) : null}
               </ScrollArea>
               <Separator className="shrink-0" />
-              <div className="shrink-0 p-6">
+              <div className="shrink-0 border-t border-primary/10 bg-white/46 p-6 backdrop-blur-xl">
                 {guestClosed ? (
                   <ClosedComposerPlaque
                     description="Нажмите «Новый диалог», чтобы начать обращение заново."
@@ -648,7 +651,7 @@ export function ChatPage({
                 ) : (
                   <div className="space-y-4">
                     {pendingImage ? (
-                      <div className="rounded-xl border border-border bg-slate-50 p-3">
+                      <div className="dock-panel p-3">
                         <p className="text-sm font-medium text-secondary">
                           {pendingImage.name}
                         </p>
@@ -658,7 +661,7 @@ export function ChatPage({
                           width={640}
                           height={360}
                           unoptimized
-                          className="mt-3 max-h-40 rounded-2xl border border-border"
+                          className="mt-3 max-h-40 rounded-2xl border border-primary/10"
                         />
                       </div>
                     ) : null}
@@ -741,33 +744,31 @@ export function ChatPage({
     return (
       <ApiStateCard
         title="Не удалось загрузить список диалогов"
-        description="Проверьте, что backend запущен и доступен `/api/conversations`."
+        description="Рабочая очередь временно недоступна. Попробуйте обновить страницу позже."
         detail={
           conversationsQuery.error instanceof Error
             ? conversationsQuery.error.message
             : undefined
         }
         actionHref="/"
-        actionLabel="Открыть дашборд"
+        actionLabel="Открыть рабочий стол"
       />
     );
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-semibold text-secondary">Чаты</h1>
-          <p className="mt-2 text-slate-500">
-            Очередь оператора: эскалации, черновик и ответ гостю.
-          </p>
-        </div>
+      <PageHero
+        eyebrow="Рабочая очередь"
+        title="Диалоги поддержки"
+        description="Эскалации, черновики и ответы пользователям собраны в одном операторском пространстве."
+      >
         {detailMode && conversation ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline">
                 <Ellipsis className="h-4 w-4" />
-                Управление
+                Действия
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -775,16 +776,16 @@ export function ChatPage({
                 onClick={() => setResolveDialogOpen(true)}
                 disabled={resolveMutation.isPending || conversation.status !== "escalated"}
               >
-                Пометить как resolved
+                Закрыть диалог
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         ) : null}
-      </div>
-      <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)_320px]">
-        <Card className="flex h-[calc(100vh-14rem)] flex-col">
+      </PageHero>
+      <div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)_340px]">
+        <Card className="workspace-card flex h-[calc(100vh-17rem)] min-h-[560px] flex-col overflow-hidden">
           <CardHeader className="shrink-0 gap-3">
-            <CardTitle>Список диалогов</CardTitle>
+            <CardTitle>Очередь обращений</CardTitle>
             <Tabs
               value={statusFilter}
               onValueChange={(value) => {
@@ -848,19 +849,19 @@ export function ChatPage({
         </Card>
         <Card
           className={cn(
-            "h-[calc(100vh-14rem)]",
+            "workspace-card h-[calc(100vh-17rem)] min-h-[560px] overflow-hidden",
             conversation?.status === "escalated" && "escalation-corner",
             conversation?.status === "resolved" && "resolved-thread",
           )}
         >
-          <CardHeader className="border-b border-border pb-4">
+          <CardHeader className="message-stage border-b border-primary/10 pb-4">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <CardTitle>{conversation?.subject ?? "Выберите диалог"}</CardTitle>
                 <p className="mt-2 text-sm text-slate-500">
                   {conversation
                     ? `${conversation.userName} · ${conversation.channel}`
-                    : "Загрузка истории"}
+                    : "Откройте обращение из очереди"}
                 </p>
               </div>
               {conversation ? (
@@ -883,14 +884,14 @@ export function ChatPage({
               />
             </ScrollArea>
             <Separator />
-            <div className="p-6">
+            <div className="border-t border-primary/10 bg-white/48 p-6 backdrop-blur-xl">
               {conversation?.status === "resolved" ? (
                 <ClosedComposerPlaque description="Отправка в эту ветку недоступна." />
               ) : (
                 <div className="space-y-4">
                   <Textarea
                     rows={4}
-                    placeholder="Введите сообщение пользователю"
+                    placeholder="Напишите ответ пользователю"
                     value={draft}
                     onChange={(event) => setDraft(event.target.value)}
                     onKeyDown={(event) => {
@@ -922,7 +923,7 @@ export function ChatPage({
                       }
                     >
                       <Send className="h-4 w-4" />
-                      Отправить
+                      Отправить ответ
                     </Button>
                   </div>
                 </div>
@@ -945,9 +946,14 @@ export function ChatPage({
             onResolve={() => setResolveDialogOpen(true)}
           />
         ) : (
-          <Card className="h-[calc(100vh-14rem)]">
-            <CardContent className="flex h-full items-center justify-center text-slate-500">
-              Выберите диалог
+          <Card className="workspace-card h-[calc(100vh-17rem)] min-h-[560px]">
+            <CardContent className="flex h-full items-center justify-center p-6">
+              <SignalTile
+                icon={Headset}
+                label="Контекст"
+                value="Выберите диалог"
+                text="После выбора здесь появятся подсказки GigaChat и действия оператора."
+              />
             </CardContent>
           </Card>
         )}

@@ -34,13 +34,16 @@ export function OperatorAssistPanel({
   return (
     <Card className={cn("h-full", resolved && "resolved-thread")}>
       <CardHeader className="border-b border-border/60 pb-4">
-        <CardTitle>Панель оператора</CardTitle>
+        <CardTitle>Помощник ответа</CardTitle>
         {resolved ? (
           <p className="mt-2 text-sm text-slate-500">Диалог закрыт</p>
         ) : null}
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="rounded-[22px] bg-slate-50/80 p-4">
+        <div className="rounded-[22px] border border-primary/10 bg-primary/5 p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">
+            Пользователь
+          </p>
           <p className="text-sm font-medium text-secondary">
             {conversation.userName}
           </p>
@@ -48,8 +51,8 @@ export function OperatorAssistPanel({
           <p className="text-sm text-slate-500">{conversation.channel}</p>
         </div>
         <Separator />
-        <div className="rounded-[22px] bg-slate-50/80 p-4">
-          <p className="text-sm font-medium text-secondary">Рекомендованный ответ</p>
+        <div className="rounded-[22px] border border-primary/10 bg-white/70 p-4">
+          <p className="text-sm font-medium text-secondary">Черновик GigaChat</p>
           {generatePending ? (
             <div className="mt-3 flex items-center gap-2 text-sm text-slate-500">
               <Spinner className="h-4 w-4" />
@@ -60,7 +63,8 @@ export function OperatorAssistPanel({
             <FormattedMarkdown className="mt-2">{draft}</FormattedMarkdown>
           ) : (
             <p className="mt-2 text-sm leading-6 text-slate-500">
-              Черновик пуст. Нажмите «Сгенерировать ответ», когда будете готовы.
+              Черновик пуст. Сгенерируйте вариант, проверьте его и отправьте
+              пользователю.
             </p>
           )}
         </div>

@@ -155,15 +155,15 @@ export function SettingsPage() {
   if (!settingsQuery.data) {
     return (
       <ApiStateCard
-        title="Настройки недоступны"
-        description="Сервер не отдал GET /api/settings. Порог, режим и правила пока только в env."
+        title="Правила ответа недоступны"
+        description="Рабочие правила временно недоступны. Порог и режим пока нельзя изменить из интерфейса."
         detail={
           settingsQuery.error instanceof Error
             ? settingsQuery.error.message
             : undefined
         }
         actionHref="/"
-        actionLabel="Вернуться в консоль"
+        actionLabel="Вернуться на рабочий стол"
       />
     );
   }
@@ -173,16 +173,16 @@ export function SettingsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-semibold text-secondary">Настройки</h1>
+        <h1 className="text-3xl font-semibold text-secondary">Правила ответа</h1>
         <p className="mt-2 text-slate-500">
-          Порог уверенности, режим помощи оператору и сценарии эскалации.
-          Секреты каналов и модели — только в переменных окружения.
+          Как агент отвечает сам, когда готовит черновик и когда передаёт диалог
+          оператору.
         </p>
       </div>
       <Card>
         <CardContent className="space-y-8 pt-6">
           <form onSubmit={onSubmit} className="space-y-8">
-            <div className="rounded-xl border border-border p-4">
+            <div className="rounded-[24px] border border-primary/10 bg-white/64 p-5">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="font-medium text-secondary">Порог уверенности</p>
@@ -206,7 +206,7 @@ export function SettingsPage() {
                 )}
               />
             </div>
-            <div className="rounded-xl border border-border p-4">
+            <div className="rounded-[24px] border border-primary/10 bg-white/64 p-5">
               <p className="font-medium text-secondary">Режим помощи оператору</p>
               <p className="mt-1 text-sm text-slate-500">
                 Кто отвечает гостю: бот, черновик оператору или только после
@@ -231,10 +231,10 @@ export function SettingsPage() {
                           aria-checked={selected}
                           onClick={() => field.onChange(mode.value)}
                           className={cn(
-                            "rounded-xl border p-4 text-left transition-colors",
+                            "rounded-[20px] border p-4 text-left transition-colors",
                             selected
-                              ? "border-primary bg-primary/10"
-                              : "border-border bg-white hover:border-primary/40",
+                              ? "border-primary bg-primary/10 shadow-[0_10px_26px_rgba(33,160,56,0.12)]"
+                              : "border-border bg-white/80 hover:border-primary/40",
                           )}
                         >
                           <p className="font-medium text-secondary">{mode.label}</p>
@@ -248,7 +248,7 @@ export function SettingsPage() {
                 )}
               />
             </div>
-            <div className="rounded-xl border border-border p-4">
+            <div className="rounded-[24px] border border-primary/10 bg-white/64 p-5">
               <p className="font-medium text-secondary">Правила эскалации</p>
               <p className="mt-1 text-sm text-slate-500">
                 Когда передавать вопрос оператору, кроме порога уверенности.
@@ -280,7 +280,7 @@ export function SettingsPage() {
             </div>
             <div className="flex justify-end">
               <Button type="submit" disabled={mutation.isPending}>
-                Применить
+                Применить правила
               </Button>
             </div>
           </form>

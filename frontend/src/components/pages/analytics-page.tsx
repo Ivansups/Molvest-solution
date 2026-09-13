@@ -30,10 +30,10 @@ import { Spinner } from "@/src/components/ui/spinner";
 import { analyticsService } from "@/src/services/analytics-service";
 import type { ConversationMetrics } from "@/src/types/api";
 
-const AUTO_COLOR = "#00a650";
-const ESCALATION_COLOR = "#1a3b6b";
-const CONVERSATION_COLOR = "#1a3b6b";
-const ESCALATION_BAR_COLOR = "#f39c12";
+const AUTO_COLOR = "var(--primary)";
+const ESCALATION_COLOR = "var(--secondary)";
+const CONVERSATION_COLOR = "var(--secondary)";
+const ESCALATION_BAR_COLOR = "var(--warning)";
 
 function formatPercent(value: number): string {
   return `${Math.round(value)}%`;
@@ -76,10 +76,10 @@ export function AnalyticsPage({ installationId }: { installationId: string }) {
     return (
       <ApiStateCard
         title="Аналитика недоступна"
-        description="Не удалось получить агрегаты из GET /api/metrics."
+        description="Не удалось получить показатели поддержки. Попробуйте обновить страницу позже."
         detail={error instanceof Error ? error.message : undefined}
         actionHref="/"
-        actionLabel="Вернуться на дашборд"
+        actionLabel="Вернуться на рабочий стол"
       />
     );
   }
@@ -87,10 +87,9 @@ export function AnalyticsPage({ installationId }: { installationId: string }) {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-semibold text-secondary">Аналитика</h1>
+        <h1 className="text-3xl font-semibold text-secondary">Аналитика качества</h1>
         <p className="mt-2 text-slate-500">
-          Живые метрики агента из API. Внешний Grafana — перспектива, не часть
-          этого экрана.
+          Автоответы, скорость реакции и передачи оператору по выбранному периоду.
         </p>
       </div>
       <Card>
@@ -102,8 +101,7 @@ export function AnalyticsPage({ installationId }: { installationId: string }) {
           </div>
         </CardHeader>
         <CardContent className="text-sm text-slate-500">
-          Пустые даты — весь доступный период установки. Фильтры уходят в
-          `date_from` / `date_to` на `GET /api/metrics`.
+          Оставьте даты пустыми, чтобы увидеть весь доступный период установки.
         </CardContent>
       </Card>
       <div className="grid gap-4 md:grid-cols-3">
@@ -178,6 +176,12 @@ function ShareChart({ data }: { data: ConversationMetrics }) {
                   ))}
                 </Pie>
                 <Tooltip
+                  contentStyle={{
+                    background: "rgba(251,255,252,0.96)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "16px",
+                    color: "var(--foreground)",
+                  }}
                   formatter={(value) => [
                     `${Number(value)} · ${formatPercent(
                       data.answer_count
@@ -222,21 +226,27 @@ function DailyChart({ data }: { data: ConversationMetrics }) {
           <div className="h-[280px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={daily} barGap={4}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#d7e1eb" vertical={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                 <XAxis
                   dataKey="label"
-                  tick={{ fill: "#5d7289", fontSize: 12 }}
-                  axisLine={{ stroke: "#d7e1eb" }}
+                  tick={{ fill: "var(--muted)", fontSize: 12 }}
+                  axisLine={{ stroke: "var(--border)" }}
                   tickLine={false}
                 />
                 <YAxis
                   allowDecimals={false}
-                  tick={{ fill: "#5d7289", fontSize: 12 }}
+                  tick={{ fill: "var(--muted)", fontSize: 12 }}
                   axisLine={false}
                   tickLine={false}
                   width={32}
                 />
                 <Tooltip
+                  contentStyle={{
+                    background: "rgba(251,255,252,0.96)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "16px",
+                    color: "var(--foreground)",
+                  }}
                   formatter={(value, name) => [
                     Number(value),
                     name === "conversation_count" ? "Диалоги" : "Эскалации",

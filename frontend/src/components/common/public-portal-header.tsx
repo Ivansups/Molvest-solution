@@ -20,8 +20,9 @@ export function PublicPortalHeader({
 }) {
   return (
     <div
+      key={current}
       className={cn(
-        "flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between",
+        "reveal-item flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between",
         className,
       )}
     >

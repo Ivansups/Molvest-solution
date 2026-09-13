@@ -104,7 +104,10 @@ export function KnowledgeDocumentPage() {
     onError: (error) =>
       toast({
         title: "Не удалось сохранить",
-        description: error instanceof Error ? error.message : "Проверьте backend.",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Проверьте доступность сервиса базы знаний.",
         variant: "destructive",
       }),
   });
@@ -126,7 +129,10 @@ export function KnowledgeDocumentPage() {
     onError: (error) =>
       toast({
         title: "Не удалось загрузить версию",
-        description: error instanceof Error ? error.message : "Проверьте backend.",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Проверьте доступность сервиса базы знаний.",
         variant: "destructive",
       }),
   });
@@ -147,7 +153,7 @@ export function KnowledgeDocumentPage() {
     return (
       <ApiStateCard
         title="Карточка документа недоступна"
-        description="Документ больше не подгружается из mock-слоя и ожидает ответ backend."
+        description="Не удалось получить карточку документа. Вернитесь к списку или повторите попытку позже."
         detail={documentQuery.error instanceof Error ? documentQuery.error.message : undefined}
         actionHref="/knowledge-base"
         actionLabel="Вернуться к списку"
