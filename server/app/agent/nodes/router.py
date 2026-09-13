@@ -64,8 +64,7 @@ async def route_intent(
     """Маршрутизирует запрос: handoff/оффтоп/приветствие или поддержка.
 
     OpenRouter — основной intake-фильтр. Пустой ключ или сбой — правила, затем
-    GigaChat Lite для хэндоффа. Сбой всех путей — эскалация (если правило
-    включено), иначе идём в support/RAG.
+    GigaChat Lite для хэндоффа. Сбой всех путей — эскалация, не RAG.
     """
     if state.get("force_handoff"):
         logger.info("route_intent force_handoff без классификатора")
@@ -79,26 +78,27 @@ async def route_intent(
     if not query:
         return {}
 
+    rules = get_effective_settings()
     # Текст гостя, не дамп Vision: иначе описание скрина путает маршрутизацию.
     guest_text = (state.get("text") or "").strip() or query
     try:
         decision = await _route(guest_text, classifier=classifier, llm=llm)
     except _RouterFailure:
-        if get_effective_settings().escalate_on_detector_failure:
-            logger.warning("route_intent оба классификатора упали, эскалация")
-            return {
-                "intent": "handoff",
-                "escalated": True,
-                "escalation_reason": DETECTOR_FAILURE_REASON,
-            }
-        logger.warning("route_intent оба классификатора упали, идём в support")
-        return {}
+        if not rules.escalate_on_detector_failure:
+            logger.warning("route_intent оба классификатора упали, эскалация отключена")
+            return {}
+        logger.warning("route_intent оба классификатора упали, эскалация")
+        return {
+            "intent": "handoff",
+            "escalated": True,
+            "escalation_reason": DETECTOR_FAILURE_REASON,
+        }
 
     intent = decision["intent"]
     if intent == "handoff":
-        if not get_effective_settings().escalate_on_guest_handoff:
+        if not rules.escalate_on_guest_handoff:
             logger.info(
-                "route_intent хэндофф выключен, support query=%s",
+                "route_intent запрос хэндоффа query=%s, эскалация отключена",
                 preview(guest_text),
             )
             return {}

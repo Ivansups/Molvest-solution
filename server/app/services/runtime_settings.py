@@ -9,7 +9,7 @@ Override живёт в памяти процесса — читают его с�
 """
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal, cast
 
 from sqlalchemy import select
@@ -58,34 +58,9 @@ def get_effective_settings() -> EffectiveSettings:
     return _override if _override is not None else _from_env()
 
 
-def get_effective_confidence_threshold() -> float:
-    """Порог эскалации: override из панели или значение из env."""
-    return get_effective_settings().confidence_threshold
-
-
 def get_effective_operator_assist_mode() -> AssistMode:
     """Режим черновика оператора: override из панели или env."""
     return get_effective_settings().operator_assist_mode
-
-
-def get_effective_escalate_on_detector_failure() -> bool:
-    """Эскалация, если оба классификатора хэндоффа недоступны."""
-    return get_effective_settings().escalate_on_detector_failure
-
-
-def get_effective_escalate_on_low_rag() -> bool:
-    """Эскалация при пустом поиске или скоре ниже порога."""
-    return get_effective_settings().escalate_on_low_rag
-
-
-def get_effective_skip_low_rag_on_image() -> bool:
-    """Не эскалировать слабый поиск, если гость прислал скриншот."""
-    return get_effective_settings().skip_low_rag_on_image
-
-
-def get_effective_escalate_on_guest_handoff() -> bool:
-    """Эскалация по явной просьбе гостя («позовите оператора»)."""
-    return get_effective_settings().escalate_on_guest_handoff
 
 
 def update_effective_settings(
@@ -104,29 +79,17 @@ def update_effective_settings(
     """
     global _override
     current = get_effective_settings()
-    _override = EffectiveSettings(
+    overrides = {
+        "escalate_on_detector_failure": escalate_on_detector_failure,
+        "escalate_on_low_rag": escalate_on_low_rag,
+        "skip_low_rag_on_image": skip_low_rag_on_image,
+        "escalate_on_guest_handoff": escalate_on_guest_handoff,
+    }
+    _override = replace(
+        current,
         confidence_threshold=confidence_threshold,
         operator_assist_mode=operator_assist_mode,
-        escalate_on_detector_failure=(
-            current.escalate_on_detector_failure
-            if escalate_on_detector_failure is None
-            else escalate_on_detector_failure
-        ),
-        escalate_on_low_rag=(
-            current.escalate_on_low_rag
-            if escalate_on_low_rag is None
-            else escalate_on_low_rag
-        ),
-        skip_low_rag_on_image=(
-            current.skip_low_rag_on_image
-            if skip_low_rag_on_image is None
-            else skip_low_rag_on_image
-        ),
-        escalate_on_guest_handoff=(
-            current.escalate_on_guest_handoff
-            if escalate_on_guest_handoff is None
-            else escalate_on_guest_handoff
-        ),
+        **{k: v for k, v in overrides.items() if v is not None},
     )
 
 

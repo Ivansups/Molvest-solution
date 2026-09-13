@@ -120,6 +120,10 @@ _FIB_FLAGS = 0x0A
 _FIB_FC_MIN = 0x18
 _FIB_FC_MAC = 0x1C
 _FIB_ENCRYPTED = 0x0100
+# Файл сохранён инкрементально (fast save): текст раздроблен piece table
+# в 0Table/1Table, а не лежит одним куском в [fcMin:fcMac) — наш парсер
+# такое не разбирает, лучше явно отказать, чем молча отдать перепутанный текст.
+_FIB_COMPLEX = 0x0004
 
 
 def _extract_doc(data: bytes) -> str:
@@ -142,6 +146,8 @@ def _extract_doc(data: bytes) -> str:
     flags = struct.unpack_from("<H", word, _FIB_FLAGS)[0]
     if flags & _FIB_ENCRYPTED:
         raise ValueError("зашифрованный .doc не поддерживается; сохраните как .docx")
+    if flags & _FIB_COMPLEX:
+        raise ValueError(_DOC_CONVERT_HINT)
     fc_min = struct.unpack_from("<I", word, _FIB_FC_MIN)[0]
     fc_mac = struct.unpack_from("<I", word, _FIB_FC_MAC)[0]
     pieces: list[str] = []
