@@ -66,9 +66,10 @@ async def evaluate_and_ingest(
 
     Вызывается из BackgroundTasks уже после закрытия сессии запроса, поэтому
     открывает собственную. Fail-closed: документ в БЗ появляется только при
-    GOOD и успешной индексации; BAD, правила или сбой оценки — кейс
-    пропускается и диалог помечается разобранным. Сбой внешнего вызова метку
-    не ставит, чтобы следующий resolve перепробовал инжест.
+    GOOD и успешной индексации; BAD или правила не прошли — кейс
+    пропускается и диалог помечается разобранным. Сбой внешнего вызова
+    (OpenRouter) или ошибка индексации метку не ставят, чтобы следующий
+    resolve перепробовал инжест.
     """
     cfg = app_settings or settings
     if not cfg.case_learning_enabled:
@@ -124,7 +125,7 @@ async def evaluate_and_ingest(
             await _mark_ingested(session, conversation)
             return
 
-        await _ingest_case(
+        indexed = await _ingest_case(
             session,
             conversation,
             question=question,
@@ -132,7 +133,8 @@ async def evaluate_and_ingest(
             llm=effective_llm,
             cfg=cfg,
         )
-        await _mark_ingested(session, conversation)
+        if indexed:
+            await _mark_ingested(session, conversation)
 
 
 def extract_case(
@@ -207,8 +209,14 @@ async def _ingest_case(
     answer: str,
     llm: EmbeddingsProvider,
     cfg: Settings,
-) -> None:
-    """Создаёт документ-кейс и индексирует его; при сбое артефакт откатывается."""
+) -> bool:
+    """Создаёт документ-кейс и индексирует его.
+
+    Возвращает True при успешной индексации — только тогда вызывающий код
+    вправе пометить диалог разобранным. При сбое индексации возвращает False
+    и откатывает созданный документ, чтобы следующий resolve повторил
+    попытку (fail-closed).
+    """
     case_text = f"Вопрос: {question}\n\nОтвет: {answer}"
     data = case_text.encode("utf-8")
     chunks = extract_chunks(
@@ -219,7 +227,7 @@ async def _ingest_case(
     )
     if not chunks:
         logger.warning("case learning: пустой кейс conversation_id=%s", conversation.id)
-        return
+        return False
     document = Document(
         installation_id=conversation.installation_id,
         title=_case_title(question),
@@ -237,7 +245,7 @@ async def _ingest_case(
         # Повторный вызов или гонка двух фоновых задач — документ уже есть.
         await session.rollback()
         logger.info("case learning: дубль conversation_id=%s", conversation.id)
-        return
+        return False
     try:
         await index_document(session, document, llm, chunks=chunks, app_settings=cfg)
     except IngestionError as exc:
@@ -248,6 +256,8 @@ async def _ingest_case(
         )
         await session.delete(document)
         await session.commit()
+        return False
+    return True
 
 
 async def _load_conversation(
