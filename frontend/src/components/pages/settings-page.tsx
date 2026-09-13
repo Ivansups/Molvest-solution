@@ -59,7 +59,7 @@ export function SettingsPage() {
     resolver: zodResolver(schema),
     defaultValues: {
       confidence_threshold: 0.8,
-      operator_assist_mode: "draft",
+      operator_assist_mode: "auto",
     },
   });
   const confidenceThreshold = useWatch({
