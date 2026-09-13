@@ -135,6 +135,80 @@ jobs:
       - name: Build web image
         run: docker build -t molvest-web ./frontend
 
+  outdated-deps:
+    name: Check outdated dependencies
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.17.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install server deps
+        working-directory: server
+        run: uv sync --all-groups
+      - name: Install frontend deps
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+      - name: Collect outdated packages
+        id: check
+        run: |
+          {
+            echo "### Backend (uv)"
+            echo '```'
+            (cd server && uv pip list --outdated) | tee /tmp/server-outdated.txt || true
+            echo '```'
+            echo
+            echo "### Frontend (pnpm)"
+            echo '```'
+            (cd frontend && pnpm outdated) | tee /tmp/frontend-outdated.txt || true
+            echo '```'
+          } > /tmp/outdated-body.md
+
+          if [ -s /tmp/server-outdated.txt ] || [ -s /tmp/frontend-outdated.txt ]; then
+            echo "has_outdated=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_outdated=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Sync tracking issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          HAS_OUTDATED: ${{ steps.check.outputs.has_outdated }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          TITLE="📦 Outdated dependencies"
+          ISSUE_NUMBER=$(gh issue list --repo "$REPO" --state open --search "in:title \"$TITLE\"" --json number,title \
+            --jq "[.[] | select(.title == \"$TITLE\")][0].number")
+
+          if [ "$HAS_OUTDATED" = "true" ]; then
+            {
+              echo "Обнаружено CI на PR #${PR_NUMBER} (\`${PR_SHA}\`)."
+              echo
+              cat /tmp/outdated-body.md
+            } > /tmp/issue-body.md
+
+            if [ -n "$ISSUE_NUMBER" ]; then
+              gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --body-file /tmp/issue-body.md
+            else
+              gh issue create --repo "$REPO" --title "$TITLE" --body-file /tmp/issue-body.md
+            fi
+          elif [ -n "$ISSUE_NUMBER" ]; then
+            gh issue close "$ISSUE_NUMBER" --repo "$REPO" \
+              --comment "Все зависимости актуальны на \`${PR_SHA}\` — закрываю."
+          fi
+
   notify:
     name: Telegram alert
     runs-on: ubuntu-latest
