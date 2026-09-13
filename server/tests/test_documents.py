@@ -10,7 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.chunk import Chunk
 from app.models.document import Document
-from app.models.enums import DocumentStatus
+from app.models.enums import DocumentStatus, FileType
+from app.services.documents import file_type_from_name
 
 INSTALL_A = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 INSTALL_B = UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
@@ -40,14 +41,27 @@ async def test_upload_pdf_and_docx_are_pending(api_client: AsyncClient) -> None:
         "manual.docx",
         body=b"PK\x03\x04docx",
     )
+    doc_status, doc = await _upload(
+        api_client,
+        "legacy.doc",
+        body=b"not ole",
+    )
     assert pdf_status == 201
     assert docx_status == 201
+    assert doc_status == 201
     assert pdf["status"] == DocumentStatus.PENDING
     assert docx["status"] == DocumentStatus.PENDING
+    assert doc["status"] == DocumentStatus.PENDING
+    assert doc["file_type"] == FileType.DOC
     pdf_path = Path(str(pdf["metadata"]["storage_path"]))  # type: ignore[index]
     docx_path = Path(str(docx["metadata"]["storage_path"]))  # type: ignore[index]
     assert pdf_path.is_file()
     assert docx_path.is_file()
+
+
+def test_file_type_from_name_accepts_doc() -> None:
+    assert file_type_from_name("legacy.doc") == FileType.DOC
+    assert file_type_from_name("manual.docx") == FileType.DOCX
 
 
 async def test_unsupported_type_is_rejected(api_client: AsyncClient) -> None:

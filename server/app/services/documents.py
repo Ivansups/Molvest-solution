@@ -10,11 +10,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, settings
-from app.core.gigachat_client import GigaChatService, get_gigachat_service
+from app.core.gigachat_client import get_gigachat_service
 from app.core.redis import increment_kb_version
 from app.models.document import Document
 from app.models.enums import DocumentStatus, FileType
 from app.rag.ingestion import IngestionError, index_document
+from app.rag.protocols import EmbeddingsProvider
 from app.selectors.documents import get_document
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 _EXTENSIONS: dict[str, FileType] = {
     ".pdf": FileType.PDF,
     ".docx": FileType.DOCX,
+    ".doc": FileType.DOC,
     ".html": FileType.HTML,
     ".htm": FileType.HTML,
     ".md": FileType.MD,
@@ -46,7 +48,7 @@ class DuplicateDocumentError(Exception):
 
 
 class UnsupportedFileTypeError(Exception):
-    """Расширение не из списка PDF/DOCX/HTML/MD."""
+    """Расширение не из списка PDF/DOCX/DOC/HTML/MD."""
 
     def __init__(self, file_name: str) -> None:
         self.file_name = file_name
@@ -87,6 +89,32 @@ async def upload_document(
     safe_name = Path(file.filename or "").name
     if not safe_name:
         raise UnsupportedFileTypeError(file.filename or "")
+    return await store_uploaded_bytes(
+        session,
+        file_name=safe_name,
+        data=await file.read(),
+        title=title,
+        installation_id=installation_id,
+        extra_metadata=extra_metadata,
+        app_settings=cfg,
+    )
+
+
+async def store_uploaded_bytes(
+    session: AsyncSession,
+    *,
+    file_name: str,
+    data: bytes,
+    title: str,
+    installation_id: UUID,
+    extra_metadata: dict[str, object] | None = None,
+    app_settings: Settings | None = None,
+) -> Document:
+    """Сохраняет байты как PENDING и пишет файл на диск после commit."""
+    cfg = app_settings or settings
+    safe_name = Path(file_name).name
+    if not safe_name:
+        raise UnsupportedFileTypeError(file_name)
     file_type = file_type_from_name(safe_name)
 
     document = Document(
@@ -108,7 +136,7 @@ async def upload_document(
     dest = _storage_path(cfg.upload_dir, document)
     try:
         await asyncio.to_thread(dest.parent.mkdir, parents=True, exist_ok=True)
-        await asyncio.to_thread(dest.write_bytes, await file.read())
+        await asyncio.to_thread(dest.write_bytes, data)
     except OSError:
         await session.delete(document)
         await session.commit()
@@ -184,7 +212,7 @@ async def reindex_document(
     document_id: UUID,
     installation_id: UUID,
     *,
-    llm: GigaChatService | None = None,
+    llm: EmbeddingsProvider | None = None,
     app_settings: Settings | None = None,
 ) -> Document:
     """Индексирует документ: чанкит, эмбеддит и заменяет старые чанки."""

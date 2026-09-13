@@ -36,6 +36,19 @@ async def list_documents(
     return rows, total
 
 
+async def get_document_by_file_name(
+    session: AsyncSession,
+    file_name: str,
+    installation_id: UUID,
+) -> Document | None:
+    """Документ с таким именем в установке или None."""
+    stmt = select(Document).where(
+        Document.file_name == file_name,
+        Document.installation_id == installation_id,
+    )
+    return (await session.scalars(stmt)).first()
+
+
 async def get_document(
     session: AsyncSession,
     document_id: UUID,
