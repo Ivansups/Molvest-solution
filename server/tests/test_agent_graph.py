@@ -812,6 +812,10 @@ async def test_draft_hold_skips_graph(
     from app.models.message import Message
     from app.services.conversation_status import transition_status
 
+    runtime_settings.update_effective_settings(
+        confidence_threshold=0.8,
+        operator_assist_mode="draft",
+    )
     conversation = Conversation(
         installation_id=UUID(_INSTALLATION_ID),
         user_id="u1",
@@ -883,6 +887,10 @@ async def test_draft_hold_image_without_text_keeps_placeholder(
     from app.services.conversation_status import transition_status
     from app.services.conversations import IMAGE_HOLD_TEXT
 
+    runtime_settings.update_effective_settings(
+        confidence_threshold=0.8,
+        operator_assist_mode="draft",
+    )
     conversation = Conversation(
         installation_id=UUID(_INSTALLATION_ID),
         user_id="u1",

@@ -16,10 +16,17 @@ from gigachat.models import (
 )
 
 from app.core.config import Settings, settings
+from app.rag.chunking import estimate_tokens
 
 logger = logging.getLogger(__name__)
 
 ChatRole = Literal["system", "user", "assistant"]
+# POST /embeddings принимает не только 514 токенов на элемент, но и бюджет
+# токенов на весь запрос сразу («413 Request size exceeded» без номера
+# элемента) — большой документ с полсотней чанков в одном вызове ловит его,
+# даже если каждый чанк по отдельности укладывается в лимит. Бьём на пачки.
+_EMBEDDINGS_BATCH_TOKEN_BUDGET = 8000
+_EMBEDDINGS_BATCH_MAX_ITEMS = 32
 
 
 class GigaChatError(Exception):
@@ -142,24 +149,52 @@ class GigaChatService:
         return text
 
     async def get_embeddings(self, texts: list[str]) -> list[list[float]]:
-        """Векторизует тексты моделью эмбеддингов GigaChat."""
+        """Векторизует тексты моделью эмбеддингов GigaChat, пачками под лимит."""
         logger.info(
             "GigaChat embeddings model=%s texts=%s chars=%s",
             self._settings.gigachat_embeddings_model,
             len(texts),
             sum(len(item) for item in texts),
         )
-        result = await self._client.aembeddings(
-            texts,
-            model=self._settings.gigachat_embeddings_model,
-        )
-        logger.info("GigaChat embeddings готов vectors=%s", len(result.data))
-        return [item.embedding for item in result.data]
+        vectors: list[list[float]] = []
+        for batch in _batch_by_token_budget(texts):
+            result = await self._client.aembeddings(
+                batch,
+                model=self._settings.gigachat_embeddings_model,
+            )
+            vectors.extend(item.embedding for item in result.data)
+        logger.info("GigaChat embeddings готов vectors=%s", len(vectors))
+        return vectors
 
 
 def get_gigachat_service() -> GigaChatService:
     """Возвращает процесс-одиночку клиента."""
     return _service
+
+
+def _batch_by_token_budget(texts: list[str]) -> list[list[str]]:
+    """Группирует тексты в пачки под лимит запроса /embeddings.
+
+    Режет и по суммарной оценке токенов, и по числу элементов — что раньше
+    упрётся в границу.
+    """
+    batches: list[list[str]] = []
+    current: list[str] = []
+    current_tokens = 0
+    for text in texts:
+        tokens = estimate_tokens(text)
+        if current and (
+            current_tokens + tokens > _EMBEDDINGS_BATCH_TOKEN_BUDGET
+            or len(current) >= _EMBEDDINGS_BATCH_MAX_ITEMS
+        ):
+            batches.append(current)
+            current = []
+            current_tokens = 0
+        current.append(text)
+        current_tokens += tokens
+    if current:
+        batches.append(current)
+    return batches
 
 
 def _to_messages(messages: Sequence[ChatTurn]) -> list[ChatMessage]:

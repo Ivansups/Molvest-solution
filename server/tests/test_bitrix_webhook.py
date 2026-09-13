@@ -72,6 +72,11 @@ def _mock_draft(
     """Подменяет retrieve+generate в services/draft.py."""
     import app.services.draft as draft_service
 
+    runtime_settings.update_effective_settings(
+        confidence_threshold=0.8,
+        operator_assist_mode="draft",
+    )
+
     monkeypatch.setattr(
         draft_service,
         "make_retriever",

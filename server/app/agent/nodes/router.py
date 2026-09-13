@@ -26,6 +26,7 @@ from app.core.openrouter_client import (
     OpenRouterError,
     RouterDecision,
 )
+from app.services.runtime_settings import get_effective_settings
 
 logger = logging.getLogger(__name__)
 
@@ -77,11 +78,15 @@ async def route_intent(
     if not query:
         return {}
 
+    rules = get_effective_settings()
     # Текст гостя, не дамп Vision: иначе описание скрина путает маршрутизацию.
     guest_text = (state.get("text") or "").strip() or query
     try:
         decision = await _route(guest_text, classifier=classifier, llm=llm)
     except _RouterFailure:
+        if not rules.escalate_on_detector_failure:
+            logger.warning("route_intent оба классификатора упали, эскалация отключена")
+            return {}
         logger.warning("route_intent оба классификатора упали, эскалация")
         return {
             "intent": "handoff",
@@ -91,6 +96,12 @@ async def route_intent(
 
     intent = decision["intent"]
     if intent == "handoff":
+        if not rules.escalate_on_guest_handoff:
+            logger.info(
+                "route_intent запрос хэндоффа query=%s, эскалация отключена",
+                preview(guest_text),
+            )
+            return {}
         logger.info("route_intent запрос хэндоффа query=%s", preview(guest_text))
         return {
             "intent": "handoff",

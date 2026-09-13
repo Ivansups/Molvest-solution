@@ -28,6 +28,8 @@ node_modules/
 
 # uploads written by the API container
 server/data/uploads/
+# cache of the manual 1C docs ingest script
+server/data/1c-docs-cache/
 
 # logs & OS
 *.log

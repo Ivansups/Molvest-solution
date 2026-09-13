@@ -36,6 +36,19 @@ async def list_documents(
     return rows, total
 
 
+async def get_document_by_file_name(
+    session: AsyncSession,
+    file_name: str,
+    installation_id: UUID,
+) -> Document | None:
+    """Документ с таким именем в установке или None."""
+    stmt = select(Document).where(
+        Document.file_name == file_name,
+        Document.installation_id == installation_id,
+    )
+    return (await session.scalars(stmt)).first()
+
+
 async def get_document(
     session: AsyncSession,
     document_id: UUID,
@@ -51,3 +64,19 @@ async def get_document(
         )
     )
     return (await session.scalars(stmt)).first()
+
+
+async def is_file_name_taken(
+    session: AsyncSession,
+    installation_id: UUID,
+    file_name: str,
+    *,
+    exclude_id: UUID,
+) -> bool:
+    """True, если это имя файла уже занято другим документом установки."""
+    stmt = select(Document.id).where(
+        Document.installation_id == installation_id,
+        Document.file_name == file_name,
+        Document.id != exclude_id,
+    )
+    return (await session.scalar(stmt)) is not None

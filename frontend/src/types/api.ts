@@ -122,10 +122,36 @@ export interface ConversationMetrics {
   daily: MetricsDailyPoint[];
 }
 
+export type LogEventType =
+  | "escalation"
+  | "conversation_resolved"
+  | "document_indexed"
+  | "document_failed";
+
+export interface LogEventOut {
+  id: string;
+  occurred_at: string;
+  event_type: LogEventType;
+  conversation_id: string | null;
+  document_id: string | null;
+  message: string;
+}
+
+export interface LogEventListOut {
+  items: LogEventOut[];
+  page: number;
+  page_size: number;
+  total: number;
+}
+
 export type OperatorAssistMode = "draft" | "auto" | "agent";
 
 export interface AgentSettings {
   confidence_threshold: number;
   operator_assist_mode: OperatorAssistMode;
+  escalate_on_detector_failure: boolean;
+  escalate_on_low_rag: boolean;
+  skip_low_rag_on_image: boolean;
+  escalate_on_guest_handoff: boolean;
 }
 

@@ -104,6 +104,24 @@ export const documentService = {
     }
   },
 
+  async replaceDocumentFile(
+    docId: string,
+    file: File,
+  ): Promise<DocumentDetailOut | null> {
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      await adminApiClient.post<DocumentOut>(`/documents/${docId}/file`, formData);
+      return await this.getDocument(docId);
+    } catch (error) {
+      throw toServiceError(
+        error,
+        "Не удалось загрузить новую версию документа.",
+        `/api/documents/${docId}/file`,
+      );
+    }
+  },
+
   async deleteDocument(docId: string): Promise<void> {
     try {
       await adminApiClient.delete(`/documents/${docId}`);

@@ -10,6 +10,7 @@ dependencies = [
     "gigachat>=0.2.3",
     "httpx>=0.28.1",
     "langgraph>=1.2.11",
+    "olefile>=0.47",
     "pgvector>=0.5.0",
     "pydantic-settings>=2.15.0",
     "pypdf>=6.16.2",

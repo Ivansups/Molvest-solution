@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://postgres:postgres@db:5432/molvest"
     redis_url: str = "redis://redis:6379/0"
     confidence_threshold: float = 0.8
+    # Правила эскалации: дефолт совпадает с прежним захардкоженным поведением.
+    escalate_on_detector_failure: bool = True
+    escalate_on_low_rag: bool = True
+    skip_low_rag_on_image: bool = True
+    escalate_on_guest_handoff: bool = True
     top_k: int = 5
     # 512 слов ≈ 900 токенов, окно Embeddings — 512. Держим запас.
     max_chunk_size: int = 180
@@ -51,7 +56,7 @@ class Settings(BaseSettings):
     internal_service_token: str = ""
     # draft — ответ гостю пока open; auto — и после эскалации;
     # agent — сырой ответ ИИ только после «Отправить» оператора.
-    operator_assist_mode: Literal["draft", "auto", "agent"] = "draft"
+    operator_assist_mode: Literal["draft", "auto", "agent"] = "auto"
     # --- Bitrix24: канал сценария 1 (открытые линии) ---
     bitrix_portal_url: str = ""
     bitrix_app_user_id: str = ""

@@ -1,4 +1,4 @@
-"""REST настроек агента: порог уверенности и режим эскалации."""
+"""REST настроек агента: порог, режим и правила эскалации."""
 
 import logging
 
@@ -18,13 +18,23 @@ router = APIRouter(
 logger = logging.getLogger(__name__)
 
 
+def _to_out() -> AgentSettingsOut:
+    """Мапит эффективный снимок в контракт панели."""
+    snap = runtime_settings.get_effective_settings()
+    return AgentSettingsOut(
+        confidence_threshold=snap.confidence_threshold,
+        operator_assist_mode=snap.operator_assist_mode,
+        escalate_on_detector_failure=snap.escalate_on_detector_failure,
+        escalate_on_low_rag=snap.escalate_on_low_rag,
+        skip_low_rag_on_image=snap.skip_low_rag_on_image,
+        escalate_on_guest_handoff=snap.escalate_on_guest_handoff,
+    )
+
+
 @router.get("/settings")
 async def get_settings_route() -> AgentSettingsOut:
-    """Текущие эффективные порог и режим (env или runtime override)."""
-    return AgentSettingsOut(
-        confidence_threshold=runtime_settings.get_effective_confidence_threshold(),
-        operator_assist_mode=runtime_settings.get_effective_operator_assist_mode(),
-    )
+    """Текущие эффективные порог, режим и правила (env или runtime override)."""
+    return _to_out()
 
 
 @router.put("/settings")
@@ -35,6 +45,10 @@ async def put_settings_route(
     runtime_settings.update_effective_settings(
         confidence_threshold=body.confidence_threshold,
         operator_assist_mode=body.operator_assist_mode,
+        escalate_on_detector_failure=body.escalate_on_detector_failure,
+        escalate_on_low_rag=body.escalate_on_low_rag,
+        skip_low_rag_on_image=body.skip_low_rag_on_image,
+        escalate_on_guest_handoff=body.escalate_on_guest_handoff,
     )
     await runtime_settings.persist_effective_settings(session)
     logger.info(
@@ -42,7 +56,4 @@ async def put_settings_route(
         body.confidence_threshold,
         body.operator_assist_mode,
     )
-    return AgentSettingsOut(
-        confidence_threshold=runtime_settings.get_effective_confidence_threshold(),
-        operator_assist_mode=runtime_settings.get_effective_operator_assist_mode(),
-    )
+    return _to_out()
