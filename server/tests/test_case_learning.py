@@ -374,6 +374,70 @@ async def test_evaluate_and_ingest_failure_leaves_unmarked(
     assert conversation.case_ingested_at is None
 
 
+class FailingEmbedder:
+    """Эмулирует сбой индексации (например, эмбеддинг-сервиса)."""
+
+    def __init__(self, *, fail_times: int = 1) -> None:
+        self._remaining_failures = fail_times
+
+    async def get_embeddings(self, texts: list[str]) -> list[list[float]]:
+        if self._remaining_failures > 0:
+            self._remaining_failures -= 1
+            raise RuntimeError("эмбеддинг-сервис недоступен")
+        vector = [0.1] * EMBEDDING_DIMENSIONS
+        return [vector for _ in texts]
+
+
+async def test_evaluate_and_ingest_indexing_failure_leaves_unmarked(
+    db_session: AsyncSession,
+    db_engine: AsyncEngine,
+) -> None:
+    conversation = await _seed_resolved_chat(db_session)
+    classifier = _column_verdict_factory("good")
+
+    await evaluate_and_ingest(
+        conversation.id,
+        classifier=classifier,
+        llm=FailingEmbedder(),
+        session_factory=_case_factory(db_engine),
+    )
+
+    assert await _ingested_documents(db_session) == []
+    await db_session.refresh(conversation)
+    assert conversation.case_ingested_at is None
+
+
+async def test_evaluate_and_ingest_retries_after_indexing_failure(
+    db_session: AsyncSession,
+    db_engine: AsyncEngine,
+) -> None:
+    conversation = await _seed_resolved_chat(db_session)
+    embedder = FailingEmbedder(fail_times=1)
+    session_factory = _case_factory(db_engine)
+
+    await evaluate_and_ingest(
+        conversation.id,
+        classifier=_column_verdict_factory("good"),
+        llm=embedder,
+        session_factory=session_factory,
+    )
+    await db_session.refresh(conversation)
+    assert conversation.case_ingested_at is None
+    assert await _ingested_documents(db_session) == []
+
+    await evaluate_and_ingest(
+        conversation.id,
+        classifier=_column_verdict_factory("good"),
+        llm=embedder,
+        session_factory=session_factory,
+    )
+
+    documents = await _ingested_documents(db_session)
+    assert len(documents) == 1
+    await db_session.refresh(conversation)
+    assert conversation.case_ingested_at is not None
+
+
 async def test_evaluate_and_ingest_rules_skip_marks_ingested(
     db_session: AsyncSession,
     db_engine: AsyncEngine,

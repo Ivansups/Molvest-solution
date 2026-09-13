@@ -7,7 +7,9 @@
 | Команда | Что делает |
 | --- | --- |
 | `make test` | backend pytest + frontend vitest |
-| `cd server && uv run pytest` | только API |
+| `make test-server` | backend без live LLM (`-m "not live"`) |
+| `make test-live` | живые smoke GigaChat/OpenRouter (нужны ключи в `.env`) |
+| `cd server && uv run pytest -m "not live"` | только API, как в CI |
 | `cd server && uv run pytest -k documents` | один файл / фильтр |
 | `pnpm --dir frontend test` | только UI |
 
@@ -67,7 +69,29 @@ Vitest, без браузера и без FastAPI.
 | 1. Текстовый Q&A | граф + persist + `/chat` (мок LLM) | нет e2e с живым GigaChat |
 | 2. Чат оператора | граф draft-hold; API messages/resolve/suggest | нет e2e UI / Playwright |
 | 3. Скриншот | Vision-узел графа (мок); ресайз на фронте | нет e2e с картинкой в API |
-| 4. База знаний | upload / delete / reindex / RAG | нет UI-теста админки |
+| 4. База знаний | upload / delete / reindex / RAG; автоинжест кейсов (`test_case_learning.py`, мок OpenRouter и эмбеддингов) | нет UI-теста админки; happy path автоинжеста с живым OpenRouter не в CI, проверялся вручную (PR #46) |
+
+## Live LLM (локально)
+
+Файл `server/tests/test_live_llm.py`, маркер `live`. Дешёвые вызовы:
+generate / embeddings / classify_handoff / OpenRouter route и evaluate_case.
+Vision и полный граф не трогаем (дорого).
+
+```bash
+# ключи в корневом или server/.env
+make test-live
+```
+
+Без ключа — skip, не fail. CI и `make test-server` гоняют `-m "not live"`.
+
+## Известные пробелы
+
+CI гоняет только моки. Не проверяется CI:
+
+- Живой GigaChat/OpenRouter/Vision — в PR моки; локально — `make test-live` (без Vision).
+- Redis — либо мокается, либо best-effort (падение Redis тест не валит), реального инстанса в CI нет.
+- Alembic-миграции сквозным образом — тестовая БД собирается напрямую из `Base.metadata.create_all`, а не через `alembic upgrade head`; расхождение миграции со схемой моделей CI не поймает.
+- Браузер / Playwright — UI-сценарии чата и админки автотестами не закрыты.
 
 ## Как читать падения
 
