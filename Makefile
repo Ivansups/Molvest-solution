@@ -100,8 +100,11 @@ frontend: env ## Next.js в Docker на :3000 (не pnpm dev на хосте)
 	$(COMPOSE) up -d --build web
 	@$(MAKE) health-web
 
-test-server: ## Тесты backend (pytest)
-	cd $(SERVER_DIR) && uv run pytest
+test-server: ## Тесты backend (pytest, без live LLM)
+	cd $(SERVER_DIR) && uv run pytest -m "not live"
+
+test-live: ## Живые smoke LLM (нужны ключи в .env)
+	cd $(SERVER_DIR) && uv run pytest -m live
 
 test-frontend: ## Тесты frontend (vitest)
 	pnpm --dir $(FRONTEND_DIR) test
