@@ -18,6 +18,11 @@ import { Input } from "@/src/components/ui/input";
 import { ScrollArea } from "@/src/components/ui/scroll-area";
 import type { UserSession } from "@/src/types/domain";
 
+const ROLE_LABELS: Record<UserSession["role"], string> = {
+  admin: "Старший оператор",
+  operator: "Оператор",
+};
+
 export function AppHeader({ user }: { user: UserSession }) {
   const router = useRouter();
 
@@ -26,16 +31,16 @@ export function AppHeader({ user }: { user: UserSession }) {
       <div className="ui-surface shell-panel soft-shadow flex items-center gap-4 rounded-[22px] border border-white/70 px-4 py-4">
         <div className="hidden min-w-0 xl:block">
           <p className="text-[11px] uppercase tracking-[0.2em] text-primary">
-            Support Console
+            Рабочее место
           </p>
           <p className="mt-1 text-sm font-medium text-secondary">
-            AI-агент для техподдержки 1С и операторского контура
+            Диалоги, база знаний и подсказки GigaChat для поддержки 1С
           </p>
         </div>
         <div className="relative max-w-xl flex-1">
           <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
           <Input
-            placeholder="Поиск по чатам, документам и логам"
+            placeholder="Найти диалог, документ или событие"
             className="h-11 rounded-2xl border-white/60 bg-white/80 pl-9"
           />
         </div>
@@ -44,7 +49,7 @@ export function AppHeader({ user }: { user: UserSession }) {
           className="hidden rounded-2xl border-white/60 bg-white/80 lg:inline-flex"
           asChild
         >
-          <Link href="/chat">Гостевой чат</Link>
+          <Link href="/chat">Чат пользователя</Link>
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -80,7 +85,7 @@ export function AppHeader({ user }: { user: UserSession }) {
               </Avatar>
               <div className="hidden sm:block">
                 <p className="text-sm font-medium text-secondary">{user.name}</p>
-                <p className="text-xs text-slate-500">{user.role}</p>
+                <p className="text-xs text-slate-500">{ROLE_LABELS[user.role]}</p>
               </div>
             </button>
           </DropdownMenuTrigger>

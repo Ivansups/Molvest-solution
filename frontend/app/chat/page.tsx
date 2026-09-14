@@ -9,14 +9,12 @@ export default async function GuestChatRoute() {
   const user = await getSession();
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6 px-4 py-8 lg:px-0">
-      <PublicPortalHeader
-        current="chat"
-        signedIn={Boolean(user)}
-        className="reveal-item"
-      />
-      <GuestChatIntro />
-      <ChatPage mode="guest" user={user} />
+    <div className="page-shell mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-6 px-4 py-8 lg:px-8">
+      <PublicPortalHeader current="chat" signedIn={Boolean(user)} />
+      <div className="grid items-start gap-6 xl:grid-cols-[0.92fr_1.08fr]">
+        <GuestChatIntro />
+        <ChatPage mode="guest" user={user} />
+      </div>
     </div>
   );
 }

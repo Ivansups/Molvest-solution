@@ -89,7 +89,7 @@ export function KnowledgeBasePage() {
     onError: (error) =>
       toast({
         title: "Не удалось добавить документ",
-        description: error instanceof Error ? error.message : "Проверьте backend.",
+        description: error instanceof Error ? error.message : "Проверьте подключение сервера.",
         variant: "destructive",
       }),
   });
@@ -107,7 +107,7 @@ export function KnowledgeBasePage() {
     onError: (error) =>
       toast({
         title: "Не удалось удалить документ",
-        description: error instanceof Error ? error.message : "Проверьте backend.",
+        description: error instanceof Error ? error.message : "Проверьте подключение сервера.",
         variant: "destructive",
       }),
   });
@@ -126,7 +126,7 @@ export function KnowledgeBasePage() {
     onError: (error) =>
       toast({
         title: "Не удалось запустить реиндексацию",
-        description: error instanceof Error ? error.message : "Проверьте backend.",
+        description: error instanceof Error ? error.message : "Проверьте подключение сервера.",
         variant: "destructive",
       }),
   });
@@ -143,7 +143,7 @@ export function KnowledgeBasePage() {
     return (
       <ApiStateCard
         title="База знаний недоступна"
-        description="Раздел больше не использует mock-данные и ожидает живой backend."
+        description="Раздел ожидает живой сервер документов и не подставляет демо-данные."
         detail={documentsQuery.error instanceof Error ? documentsQuery.error.message : undefined}
         actionHref="/chat"
         actionLabel="Открыть публичный чат"
@@ -161,7 +161,7 @@ export function KnowledgeBasePage() {
         <div>
           <h1 className="text-3xl font-semibold text-secondary">База знаний</h1>
           <p className="mt-2 text-slate-500">
-            Управление документами, чанками и актуальностью контента.
+            Материалы, по которым агент отвечает пользователям и готовит подсказки.
           </p>
         </div>
         <Button onClick={() => setDialogOpen(true)}>
@@ -171,7 +171,7 @@ export function KnowledgeBasePage() {
       </div>
       <Card>
         <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <CardTitle>Реестр документов</CardTitle>
+          <CardTitle>Материалы базы знаний</CardTitle>
           <div className="flex flex-col gap-3 md:flex-row">
             <div className="relative min-w-72">
               <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />

@@ -59,17 +59,17 @@ export function DashboardPage({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-semibold text-secondary">Дашборд</h1>
+        <h1 className="text-3xl font-semibold text-secondary">Рабочий стол поддержки</h1>
         <p className="mt-2 text-slate-500">
-          Статус API, база знаний и эффективность агента по живым метрикам.
+          Быстрый обзор линии: связь с сервером, база знаний и качество ответов.
         </p>
       </div>
       <div className="grid gap-4 xl:grid-cols-4">
         <StatsCard
           icon={ShieldCheck}
-          label="Статус API"
+          label="Связь с сервером"
           value={healthOk ? "ONLINE" : "OFFLINE"}
-          hint={health.ok ? "Проверка через /health" : "Backend недоступен"}
+          hint={health.ok ? "Рабочий контур отвечает" : "Сервер недоступен"}
         />
         <StatsCard
           icon={Files}
@@ -97,7 +97,7 @@ export function DashboardPage({
               icon={Percent}
               label="Автоответы"
               value={formatPercent(metrics.data.auto_answer_percent)}
-              hint="Доля ответов без эскалации (GET /api/metrics)"
+              hint="Доля ответов без передачи оператору"
             />
             <StatsCard
               icon={Timer}
@@ -163,15 +163,15 @@ export function DashboardPage({
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Контур backend</CardTitle>
+            <CardTitle>Состояние рабочего контура</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="rounded-[22px] border border-border/70 bg-slate-50/80 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-sm font-medium text-secondary">`GET /health`</p>
+                  <p className="text-sm font-medium text-secondary">Сервер поддержки</p>
                   <p className="mt-1 text-sm text-slate-500">
-                    Проверка доступности FastAPI
+                    Основной API для чата и базы знаний
                   </p>
                 </div>
                 <Badge
@@ -188,9 +188,9 @@ export function DashboardPage({
             <div className="rounded-[22px] border border-border/70 bg-slate-50/80 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-sm font-medium text-secondary">`GET /api/metrics`</p>
+                  <p className="text-sm font-medium text-secondary">Метрики диалогов</p>
                   <p className="mt-1 text-sm text-slate-500">
-                    Источник цифр эффективности агента
+                    Источник показателей качества линии
                   </p>
                 </div>
                 <Badge

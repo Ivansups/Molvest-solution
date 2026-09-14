@@ -1,104 +1,112 @@
-import { Bot, Database, SearchCheck, Sparkles } from "lucide-react";
+import {
+  Bot,
+  Camera,
+  Database,
+  Headset,
+  SearchCheck,
+  Sparkles,
+} from "lucide-react";
 import Link from "next/link";
-import { InfoPill } from "@/src/components/common/info-pill";
-import { Badge } from "@/src/components/ui/badge";
+import { FlowRail, SignalTile } from "@/src/components/common/experience-primitives";
 import { Button } from "@/src/components/ui/button";
-import { Card, CardContent } from "@/src/components/ui/card";
 
-function MiniStat({ label, value }: { label: string; value: string }) {
+function QuickTag({ children }: { children: string }) {
   return (
-    <div className="rounded-[20px] border border-border/60 bg-white/80 p-4">
-      <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">{label}</p>
-      <p className="mt-2 text-sm font-medium text-secondary">{value}</p>
-    </div>
+    <span className="rounded-full border border-white/14 bg-white/10 px-3 py-1.5 text-xs text-white/76 backdrop-blur">
+      {children}
+    </span>
   );
 }
 
 export function GuestChatIntro() {
   return (
-    <section className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-      <div className="hero-panel soft-shadow reveal-item reveal-delay-1 overflow-hidden rounded-[30px] p-8 text-white lg:p-10">
-        <div className="max-w-2xl">
-          <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">
-            Гостевой доступ
-          </p>
-          <h1 className="mt-4 text-4xl font-semibold leading-tight tracking-[-0.04em] text-balance">
-            Гостевой чат по вопросам 1С
-          </h1>
-          <p className="mt-4 max-w-xl text-sm leading-7 text-white/72">
-            Пользовательский канал без авторизации для текстовых обращений и
-            загрузки скриншотов ошибок. Закрытая панель поддержки остаётся
-            отдельным защищённым контуром.
-          </p>
+    <section className="dark-chameleon reveal-item flex min-h-[640px] flex-col justify-between overflow-hidden rounded-[38px] p-7 text-white lg:p-8">
+      <div>
+        <div className="flex flex-wrap gap-2">
+          <span className="floating-chip">
+            <Sparkles className="h-3.5 w-3.5" />
+            GigaChat
+          </span>
+          <span className="floating-chip">
+            <Headset className="h-3.5 w-3.5" />
+            Оператор рядом
+          </span>
         </div>
-        <div className="mt-10 grid gap-3 sm:grid-cols-3">
-          <InfoPill
-            icon={Database}
-            title="База знаний"
-            text="Регламенты, кейсы и инструкции 1С"
-          />
-          <InfoPill
-            icon={SearchCheck}
-            title="RAG-поиск"
-            text="Подбор релевантных фрагментов перед ответом"
-          />
-          <InfoPill
-            icon={Sparkles}
-            title="GigaChat"
-            text="Генерация ответа и Vision-анализ скриншотов"
-          />
+        <p className="mt-8 text-[11px] uppercase tracking-[0.24em] text-white/58">
+          Гостевой доступ
+        </p>
+        <h1 className="mt-4 text-5xl font-semibold leading-[0.95] tracking-[-0.06em] text-balance lg:text-6xl xl:text-5xl">
+          Ошибка 1С — в чат, решение — из базы знаний
+        </h1>
+        <p className="mt-5 max-w-xl text-base leading-8 text-white/72">
+          Пользователь описывает проблему или прикладывает скриншот. Агент
+          ищет ответ по материалам, а сложные случаи передаёт оператору.
+        </p>
+        <div className="mt-5 flex flex-wrap gap-2">
+          <QuickTag>код ошибки</QuickTag>
+          <QuickTag>форма 1С</QuickTag>
+          <QuickTag>скриншот</QuickTag>
+          <QuickTag>что нажали перед ошибкой</QuickTag>
         </div>
       </div>
-      <div className="grid gap-4">
-        <Card className="shell-panel reveal-item reveal-delay-2 rounded-[30px]">
-          <CardContent className="grid gap-4 p-6">
+
+      <div className="mt-8 grid gap-4">
+        <div className="rounded-[28px] border border-white/12 bg-white/8 p-5 backdrop-blur-xl">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/52">
+            Как идёт обращение
+          </p>
+          <FlowRail
+            tone="dark"
+            className="mt-5"
+            items={[
+              {
+                title: "Вопрос или скриншот",
+                text: "Чат принимает текст и изображение ошибки 1С.",
+              },
+              {
+                title: "Ответ с источниками",
+                text: "Агент показывает релевантные материалы базы знаний.",
+              },
+              {
+                title: "Передача человеку",
+                text: "Кнопка оператора остаётся в привычном месте и ведёт тот же сценарий.",
+              },
+            ]}
+          />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <SignalTile
+            tone="dark"
+            icon={Database}
+            label="Источник"
+            value="База знаний"
+            text="Регламенты, инструкции и кейсы 1С."
+          />
+          <SignalTile
+            tone="dark"
+            icon={Camera}
+            label="Вложения"
+            value="PNG / JPEG"
+            text="Скриншот остаётся частью обращения."
+          />
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[26px] border border-white/12 bg-white/10 p-4 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/12 text-white">
+              <Bot className="h-5 w-5" />
+            </span>
             <div>
-              <p className="text-[11px] uppercase tracking-[0.22em] text-primary">
-                Контур работы
-              </p>
-              <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-secondary">
-                Публичный чат связан с закрытой support-панелью
-              </h2>
+              <p className="text-sm font-semibold text-white">Для сотрудников</p>
+              <p className="text-sm text-white/62">Очередь и база знаний после входа</p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <MiniStat label="Канал" value="Web Widget" />
-              <MiniStat label="Модель" value="GigaChat" />
-              <MiniStat label="Вложения" value="PNG / JPEG" />
-              <MiniStat label="Маршрут" value="Chat → RAG" />
-            </div>
-            <div className="rounded-[24px] border border-border/70 bg-slate-50/80 p-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                  <Bot className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-secondary">
-                    Закрытый контур для сотрудников
-                  </p>
-                  <p className="text-sm text-slate-500">
-                    База знаний, операторская и аналитика доступны только после входа
-                  </p>
-                </div>
-              </div>
-              <Button variant="outline" className="mt-4 w-full sm:w-auto" asChild>
-                <Link href="/login">Перейти ко входу поддержки</Link>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="shell-panel reveal-item reveal-delay-3 rounded-[30px]">
-          <CardContent className="p-6">
-            <p className="text-[11px] uppercase tracking-[0.22em] text-primary">
-              Что поможет ответу
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Badge>Код ошибки</Badge>
-              <Badge>Название формы 1С</Badge>
-              <Badge>Действие пользователя</Badge>
-              <Badge>Скриншот экрана</Badge>
-            </div>
-          </CardContent>
-        </Card>
+          </div>
+          <Button variant="outline" className="border-white/18 bg-white/12 text-white hover:bg-white/18" asChild>
+            <Link href="/login">
+              Войти
+              <SearchCheck className="h-4 w-4" />
+            </Link>
+          </Button>
+        </div>
       </div>
     </section>
   );

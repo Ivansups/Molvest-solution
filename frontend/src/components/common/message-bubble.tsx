@@ -88,7 +88,7 @@ export function MessageBubble({
             width={640}
             height={360}
             unoptimized
-            className="max-h-64 rounded-xl border border-border object-cover"
+            className="h-auto max-h-64 w-auto max-w-full rounded-xl border border-border object-contain"
           />
         ) : null}
         {message.screenshotAnalysis ? (
