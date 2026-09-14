@@ -221,6 +221,8 @@ export function ChatPage({
     forgetConversation,
   } = useConversation();
   const guestSessionGeneration = useRef(0);
+  const guestThreadViewportRef = useRef<HTMLDivElement>(null);
+  const operatorThreadViewportRef = useRef<HTMLDivElement>(null);
   const [guestSessionEpoch, setGuestSessionEpoch] = useState(0);
   const [pendingGuestGeneration, setPendingGuestGeneration] = useState<
     number | null
@@ -599,7 +601,10 @@ export function ChatPage({
                   Новый диалог
                 </Button>
               </div>
-              <ScrollArea className="min-h-0 flex-1">
+              <ScrollArea
+                className="min-h-0 flex-1"
+                viewportRef={guestThreadViewportRef}
+              >
                 {guestVisibleMessages.length === 0 &&
                 !(
                   Boolean(guestConversationId) && conversationQuery.isLoading
@@ -630,6 +635,7 @@ export function ChatPage({
                       guestVisibleMessages.length === 0
                     }
                     hideConfidence
+                    scrollContainerRef={guestThreadViewportRef}
                   />
                 )}
                 {guestSendPending ? (
@@ -681,7 +687,7 @@ export function ChatPage({
                           width={640}
                           height={360}
                           unoptimized
-                          className="mt-3 max-h-40 rounded-2xl border border-primary/10"
+                          className="mt-3 h-auto max-h-40 w-auto max-w-full rounded-2xl border border-primary/10 object-contain"
                         />
                       </div>
                     ) : null}
@@ -907,12 +913,13 @@ export function ChatPage({
             </div>
           </CardHeader>
           <CardContent className="flex h-[calc(100%-5.5rem)] flex-col p-0">
-            <ScrollArea className="flex-1">
+            <ScrollArea className="flex-1" viewportRef={operatorThreadViewportRef}>
               <ConversationThread
                 key={selectedId ?? "empty"}
                 conversationId={selectedId}
                 messages={conversation?.messages}
                 isLoading={Boolean(selectedId) && conversationQuery.isLoading}
+                scrollContainerRef={operatorThreadViewportRef}
               />
             </ScrollArea>
             <Separator />

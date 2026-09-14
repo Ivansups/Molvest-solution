@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { MessageBubble } from "@/src/components/common/message-bubble";
 import { Spinner } from "@/src/components/ui/spinner";
 import { cn } from "@/src/lib/utils";
@@ -22,12 +22,21 @@ export function ConversationThread({
   messages,
   isLoading,
   hideConfidence = false,
+  scrollContainerRef,
 }: {
   conversationId: string | null;
   messages: ConversationMessage[] | undefined;
   isLoading: boolean;
   hideConfidence?: boolean;
+  /** Вьюпорт ScrollArea-обёртки: скроллим только его, а не всю страницу. */
+  scrollContainerRef?: React.RefObject<HTMLDivElement | null>;
 }) {
+  useEffect(() => {
+    const container = scrollContainerRef?.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+  }, [conversationId, isLoading, messages?.length, scrollContainerRef]);
+
   return (
     <div className="conversation-thread space-y-4 p-6">
       {isLoading ? <ThreadLoadingSkeleton /> : null}
