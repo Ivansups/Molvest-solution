@@ -280,10 +280,16 @@ export function ChatPage({
   });
 
   const sendMutation = useMutation({
-    mutationFn: async (options?: { forceHandoff?: boolean }) => {
+    mutationFn: async (options?: {
+      forceHandoff?: boolean;
+      text?: string;
+      image?: { name: string; previewUrl: string } | null;
+    }) => {
       if (isSupportMode) {
         const text =
-          draft.trim() || conversationQuery.data?.suggestedResponse?.trim() || "";
+          options?.text?.trim() ||
+          conversationQuery.data?.suggestedResponse?.trim() ||
+          "";
         if (
           !selectedId ||
           !text ||
@@ -295,10 +301,12 @@ export function ChatPage({
         return { kind: "operator" as const };
       }
       const forceHandoff = Boolean(options?.forceHandoff);
+      const text = options?.text?.trim() ?? "";
+      const image = options?.image ?? null;
       if (conversationQuery.data?.status === "resolved") {
         return null;
       }
-      if (!forceHandoff && !draft.trim() && !pendingImage) {
+      if (!forceHandoff && !text && !image) {
         return null;
       }
 
@@ -309,18 +317,16 @@ export function ChatPage({
       );
       const userContent = forceHandoff
         ? GUEST_HANDOFF_TEXT
-        : draft.trim() || "Пользователь отправил изображение";
-      const imageUrl = forceHandoff ? undefined : pendingImage?.previewUrl;
+        : text || "Пользователь отправил изображение";
+      const imageUrl = forceHandoff ? undefined : image?.previewUrl;
       const guestUserId = `guest-${guestConversationId ?? "session"}`;
       const data = await chatService.sendMessage({
         message_id: crypto.randomUUID(),
         workspace_id: installationId,
         conversation_id: selectedId,
-        text: forceHandoff ? GUEST_HANDOFF_TEXT : draft.trim() || null,
+        text: forceHandoff ? GUEST_HANDOFF_TEXT : text || null,
         image_base64:
-          forceHandoff || !pendingImage
-            ? null
-            : dataUrlToBase64(pendingImage.previewUrl),
+          forceHandoff || !image ? null : dataUrlToBase64(image.previewUrl),
         user_id: user?.id ?? guestUserId,
         ...(forceHandoff ? { force_handoff: true } : {}),
       });
@@ -333,10 +339,44 @@ export function ChatPage({
         forceHandoff,
       };
     },
-    onMutate: (): { generation: number } => {
+    onMutate: (variables): { generation: number } => {
       const generation = guestSessionGeneration.current;
-      if (!isSupportMode) {
-        setPendingGuestGeneration(generation);
+      if (isSupportMode) {
+        return { generation };
+      }
+      setPendingGuestGeneration(generation);
+
+      const forceHandoff = Boolean(variables?.forceHandoff);
+      const text = variables?.text?.trim() ?? "";
+      const image = variables?.image ?? null;
+      if (
+        conversationQuery.data?.status === "resolved" ||
+        (!forceHandoff && !text && !image)
+      ) {
+        return { generation };
+      }
+
+      const userMessage: ConversationMessage = {
+        id: crypto.randomUUID(),
+        role: "user",
+        content: forceHandoff
+          ? GUEST_HANDOFF_TEXT
+          : text || "Пользователь отправил изображение",
+        createdAt: new Date().toISOString(),
+        imageUrl: forceHandoff ? undefined : image?.previewUrl,
+      };
+      setDraft("");
+      setPendingImage(null);
+      if (selectedId) {
+        queryClient.setQueryData(
+          ["conversation", installationId, selectedId],
+          (current: ConversationDetail | null | undefined) =>
+            current
+              ? { ...current, messages: [...current.messages, userMessage] }
+              : current,
+        );
+      } else {
+        setGuestMessages((current) => [...current, userMessage]);
       }
       return { generation };
     },
@@ -355,17 +395,8 @@ export function ChatPage({
         ) {
           return;
         }
-        setDraft("");
-        setPendingImage(null);
         const createdAt = new Date().toISOString();
         const conversationId = result.data.conversation_id;
-        const userMessage: ConversationMessage = {
-          id: crypto.randomUUID(),
-          role: "user",
-          content: result.userContent,
-          createdAt,
-          imageUrl: result.imageUrl,
-        };
         const replyMessage: ConversationMessage = {
           id: result.data.message_id,
           role: result.data.escalated ? "system" : "assistant",
@@ -377,27 +408,16 @@ export function ChatPage({
         };
         const showReply = result.forceHandoff || !result.alreadyEscalated;
         setGuestConversationId(conversationId);
-        setGuestMessages((current) => {
-          const next = [...current, userMessage];
-          if (showReply) {
-            next.push(replyMessage);
-          }
-          return next;
-        });
-        queryClient.setQueryData(
-          ["conversation", installationId, conversationId],
-          (current: ConversationDetail | null | undefined) => {
-            if (!current) {
-              return current;
-            }
-            return {
-              ...current,
-              messages: showReply
-                ? [...current.messages, userMessage, replyMessage]
-                : [...current.messages, userMessage],
-            };
-          },
-        );
+        if (showReply) {
+          setGuestMessages((current) => [...current, replyMessage]);
+          queryClient.setQueryData(
+            ["conversation", installationId, conversationId],
+            (current: ConversationDetail | null | undefined) =>
+              current
+                ? { ...current, messages: [...current.messages, replyMessage] }
+                : current,
+          );
+        }
         toast({
           title:
             result.data.escalated && !result.alreadyEscalated
@@ -676,8 +696,18 @@ export function ChatPage({
                         }
                         event.preventDefault();
                         if (!guestSendPending) {
-                          sendMutation.mutate();
+                          sendMutation.mutate({ text: draft, image: pendingImage });
                         }
+                      }}
+                      onPaste={async (event) => {
+                        const file = Array.from(event.clipboardData.items)
+                          .find((item) => item.type.startsWith("image/"))
+                          ?.getAsFile();
+                        if (!file) {
+                          return;
+                        }
+                        event.preventDefault();
+                        setPendingImage(await attachScreenshot(file));
                       }}
                     />
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -704,7 +734,9 @@ export function ChatPage({
                       </div>
                       <Button
                         type="button"
-                        onClick={() => sendMutation.mutate()}
+                        onClick={() =>
+                          sendMutation.mutate({ text: draft, image: pendingImage })
+                        }
                         disabled={guestSendPending}
                       >
                         <Send className="h-4 w-4" />
@@ -906,14 +938,14 @@ export function ChatPage({
                           draft.trim() || conversation?.suggestedResponse.trim(),
                         );
                       if (canSend) {
-                        sendMutation.mutate();
+                        sendMutation.mutate({ text: draft });
                       }
                     }}
                     disabled={conversation?.status !== "escalated"}
                   />
                   <div className="flex justify-end">
                     <Button
-                      onClick={() => sendMutation.mutate()}
+                      onClick={() => sendMutation.mutate({ text: draft })}
                       disabled={
                         sendMutation.isPending ||
                         conversation?.status !== "escalated" ||
@@ -939,7 +971,7 @@ export function ChatPage({
             canSend={Boolean(draft.trim() || conversation.suggestedResponse.trim())}
             sendPending={sendMutation.isPending}
             onGenerateDraft={() => generateMutation.mutate()}
-            onSendDraft={() => sendMutation.mutate()}
+            onSendDraft={() => sendMutation.mutate({ text: draft })}
             onEditDraft={() =>
               setDraft((current) => current || conversation.suggestedResponse)
             }
